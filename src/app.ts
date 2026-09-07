@@ -170,11 +170,29 @@ app.delete("/posts/:id", async (req, res) => {
             [id]
         );
 
+        if ((result as any).affectedRows === 0) {
+            res.status(404).json({
+                success: false,
+                message: "Artikel tidak ditemukan"
+            });
+
+            return;
+        }
+
         res.status(200).json({
             success: true,
             message: "Artikel berhasil dihapus",
             data: result
         });
+
+        if ((result as any).affectedRows === 0) {
+    res.status(404).json({
+        success: false,
+        message: "Artikel tidak ditemukan"
+    });
+
+    return;
+}
     } catch (error) {
         console.error(error);
 
@@ -184,6 +202,8 @@ app.delete("/posts/:id", async (req, res) => {
         });
     }
 });
+
+
 
 app.listen(port, () => {
   console.log(`Server is running on http://localhost:${port}`);
