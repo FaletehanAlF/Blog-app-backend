@@ -6,7 +6,9 @@ app.use(express.json());
 
 const port = 8000;
 
-app.get("/", (req, res) => {
+app.get("/categories", async (req, res) => {
+  try {
+    const [rows] = await db.query("SELECT * FROM categories");
   res.json({
     message: "Blog API Berjalan",
   });
