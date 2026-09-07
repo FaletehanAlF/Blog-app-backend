@@ -61,6 +61,58 @@ app.post("/posts", async (req, res) => {
     }
 });
 
+app.put("/posts/:id", async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const validation = postSchema.safeParse(req.body);
+
+        if (!validation.success) {
+            res.status(400).json({
+                success: false,
+                message: "Data tidak valid",
+                errors: validation.error.issues
+            });
+
+            return;
+        }
+
+        const { title, content, category_id } = validation.data;
+
+        const [category] = await db.query(
+            "SELECT id FROM categories WHERE id = ?",
+            [category_id]
+        );
+
+        if ((category as any[]).length === 0) {
+            res.status(400).json({
+                success: false,
+                message: "Kategori tidak ditemukan"
+            });
+
+            return;
+        }
+
+        const [result] = await db.query(
+            "UPDATE posts SET title = ?, content = ?, category_id = ? WHERE id = ?",
+            [title, content, category_id, id]
+        );
+
+        res.status(200).json({
+            success: true,
+            message: "Artikel berhasil diperbarui",
+            data: result
+        });
+    } catch (error) {
+        console.error(error);
+
+        res.status(500).json({
+            success: false,
+            message: "Gagal memperbarui artikel"
+        });
+    }
+});
+
 app.delete("/posts/:id", async (req, res) => {
     try {
         const { id } = req.params;
