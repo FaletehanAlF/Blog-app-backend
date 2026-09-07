@@ -25,6 +25,45 @@ app.get("/categories", async (req, res) => {
   }
 });
 
+app.get("/posts/:id", async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const [rows] = await db.query(`
+            SELECT 
+                posts.id,
+                posts.title,
+                posts.content,
+                categories.name AS category
+            FROM posts
+            JOIN categories
+                ON posts.category_id = categories.id
+            WHERE posts.id = ?
+        `, [id]);
+
+        if ((rows as any[]).length === 0) {
+            res.status(404).json({
+                success: false,
+                message: "Artikel tidak ditemukan"
+            });
+
+            return;
+        }
+
+        res.status(200).json({
+            success: true,
+            data: (rows as any[])[0]
+        });
+    } catch (error) {
+        console.error(error);
+
+        res.status(500).json({
+            success: false,
+            message: "Gagal mengambil detail artikel"
+        });
+    }
+});
+
 app.post("/posts", async (req, res) => {
     try {
         const validation = postSchema.safeParse(req.body);
