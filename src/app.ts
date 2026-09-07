@@ -1,6 +1,6 @@
 import express from "express";
 import db from "./config/database.js";
-
+import { postSchema } from "./schemas/post.schema.js";
 
 const app = express();
 
