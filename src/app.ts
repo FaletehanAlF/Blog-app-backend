@@ -100,6 +100,30 @@ app.put("/posts/:id", async (req, res) => {
     }
 });
 
+app.delete("/posts/:id", async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const [result] = await db.query(
+            "DELETE FROM posts WHERE id = ?",
+            [id]
+        );
+
+        res.status(200).json({
+            success: true,
+            message: "Artikel berhasil dihapus",
+            data: result
+        });
+    } catch (error) {
+        console.error(error);
+
+        res.status(500).json({
+            success: false,
+            message: "Gagal menghapus artikel"
+        });
+    }
+});
+
 app.listen(port, () => {
   console.log(`Server is running on http://localhost:${port}`);
 });
