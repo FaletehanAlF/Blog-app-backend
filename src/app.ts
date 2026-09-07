@@ -25,7 +25,41 @@ app.get("/categories", async (req, res) => {
   }
 });
 
+app.post("/posts", async (req, res) => {
+    try {
+        const validation = postSchema.safeParse(req.body);
 
+        if (!validation.success) {
+            res.status(400).json({
+                success: false,
+                message: "Data tidak valid",
+                errors: validation.error.issues
+            });
+
+            return;
+        }
+
+        const { title, content, category_id } = validation.data;
+
+        const [result] = await db.query(
+            "INSERT INTO posts (title, content, category_id) VALUES (?, ?, ?)",
+            [title, content, category_id]
+        );
+
+        res.status(201).json({
+            success: true,
+            message: "Artikel berhasil ditambahkan",
+            data: result
+        });
+    } catch (error) {
+        console.error(error);
+
+        res.status(500).json({
+            success: false,
+            message: "Gagal menambahkan artikel"
+        });
+    }
+});
 
 app.delete("/posts/:id", async (req, res) => {
     try {
