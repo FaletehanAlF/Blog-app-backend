@@ -138,13 +138,13 @@ app.put("/posts/:id", async (req, res) => {
         );
         
         if ((result as any).affectedRows === 0) {
-    res.status(404).json({
-        success: false,
-        message: "Artikel tidak ditemukan"
-    });
+        res.status(404).json({
+            success: false,
+            message: "Artikel tidak ditemukan"
+        });
 
-    return;
-}
+        return;
+      }
 
         res.status(200).json({
             success: true,
