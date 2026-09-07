@@ -136,6 +136,15 @@ app.put("/posts/:id", async (req, res) => {
             "UPDATE posts SET title = ?, content = ?, category_id = ? WHERE id = ?",
             [title, content, category_id, id]
         );
+        
+        if ((result as any).affectedRows === 0) {
+    res.status(404).json({
+        success: false,
+        message: "Artikel tidak ditemukan"
+    });
+
+    return;
+}
 
         res.status(200).json({
             success: true,
