@@ -4,7 +4,7 @@ const db = mysql2.createPool({
     host: "localhost",
     user: "root",
     password: "",
-    database: "db_blog_api",
+    database: "db_blog_app",
 });
 
 export default db;

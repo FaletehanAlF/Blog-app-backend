@@ -75,6 +75,31 @@ app.post("/posts", async (req, res) => {
     }
 });
 
+app.put("/posts/:id", async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { title, content, category_id } = req.body;
+
+        const [result] = await db.query(
+            "UPDATE posts SET title = ?, content = ?, category_id = ? WHERE id = ?",
+            [title, content, category_id, id]
+        );
+
+        res.status(200).json({
+            success: true,
+            message: "Artikel berhasil diperbarui",
+            data: result
+        });
+    } catch (error) {
+        console.error(error);
+
+        res.status(500).json({
+            success: false,
+            message: "Gagal memperbarui artikel"
+        });
+    }
+});
+
 app.listen(port, () => {
   console.log(`Server is running on http://localhost:${port}`);
 });
