@@ -9,7 +9,7 @@ const port = 8000;
 app.get("/categories", async (req, res) => {
   try {
     const [rows] = await db.query("SELECT * FROM categories");
-  res.json({
+    res.status(200).json({
     message: "Blog API Berjalan",
   });
 });
