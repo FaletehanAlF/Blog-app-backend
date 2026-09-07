@@ -6,4 +6,5 @@ app.use(express.json());
 
 const port = 8000;
 
-app.list
+app.listen(port, () => {
+  cons
