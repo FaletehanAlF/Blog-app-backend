@@ -6,3 +6,5 @@ const db = mysql2.createPool({
     password: "",
     database: "db_blog_api",
 });
+
+export default db;
