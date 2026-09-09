@@ -1,14 +1,79 @@
 import express from "express";
 import db from "./config/database.js";
 import { postSchema } from "./schemas/post.schema.js";
+import cors from "cors";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
+import { fileURLToPath } from "url";
 
 const app = express();
 
+app.use(cors());
 app.use(express.json());
 
 const port = 8000;
 
-app.get("/categories", async (req, res) => {
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const uploadsDir = path.join(__dirname, "..", "uploads");
+
+if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+    destination: (_req, _file, cb) => {
+        cb(null, uploadsDir);
+    },
+    filename: (_req, file, cb) => {
+        const ext = path.extname(file.originalname).toLowerCase();
+        const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
+
+        cb(null, uniqueName);
+    },
+});
+
+const allowedMimeTypes = [
+    "image/jpeg",
+    "image/jpg",
+    "image/png",
+    "image/webp",
+];
+
+const allowedExts = [
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".webp",
+];
+
+const upload = multer({
+    storage,
+    limits: {
+        fileSize: 5 * 1024 * 1024,
+    },
+    fileFilter: (_req, file, cb) => {
+        const ext = path.extname(file.originalname).toLowerCase();
+
+        if (
+            allowedMimeTypes.includes(file.mimetype) &&
+            allowedExts.includes(ext)
+        ) {
+            cb(null, true);
+        } else {
+            cb(
+                new Error(
+                    "Hanya file gambar (jpg, jpeg, png, webp) yang diperbolehkan"
+                )
+            );
+        }
+    },
+});
+
+app.use("/uploads", express.static(uploadsDir));
+
+app.get("/categories", async (_req, res) => {
     try {
         const [rows] = await db.query(
             "SELECT * FROM categories"
@@ -17,19 +82,19 @@ app.get("/categories", async (req, res) => {
         res.status(200).json({
             success: true,
             message: "Berhasil mengambil data kategori",
-            data: rows
+            data: rows,
         });
     } catch (error) {
         console.error(error);
 
         res.status(500).json({
             success: false,
-            message: "Gagal mengambil data kategori"
+            message: "Gagal mengambil data kategori",
         });
     }
 });
 
-app.get("/posts", async (req, res) => {
+app.get("/posts", async (_req, res) => {
     try {
         const [rows] = await db.query(`
             SELECT
@@ -47,14 +112,14 @@ app.get("/posts", async (req, res) => {
         res.status(200).json({
             success: true,
             message: "Berhasil mengambil data artikel",
-            data: rows
+            data: rows,
         });
     } catch (error) {
         console.error(error);
 
         res.status(500).json({
             success: false,
-            message: "Gagal mengambil data artikel"
+            message: "Gagal mengambil data artikel",
         });
     }
 });
@@ -63,7 +128,8 @@ app.get("/posts/:id", async (req, res) => {
     try {
         const { id } = req.params;
 
-        const [rows] = await db.query(`
+        const [rows] = await db.query(
+            `
             SELECT
                 posts.id,
                 posts.title,
@@ -74,12 +140,14 @@ app.get("/posts/:id", async (req, res) => {
             JOIN categories
                 ON posts.category_id = categories.id
             WHERE posts.id = ?
-        `, [id]);
+            `,
+            [id]
+        );
 
         if ((rows as any[]).length === 0) {
             res.status(404).json({
                 success: false,
-                message: "Artikel tidak ditemukan"
+                message: "Artikel tidak ditemukan",
             });
 
             return;
@@ -88,71 +156,106 @@ app.get("/posts/:id", async (req, res) => {
         res.status(200).json({
             success: true,
             message: "Berhasil mengambil detail artikel",
-            data: (rows as any[])[0]
+            data: (rows as any[])[0],
         });
     } catch (error) {
         console.error(error);
 
         res.status(500).json({
             success: false,
-            message: "Gagal mengambil detail artikel"
+            message: "Gagal mengambil detail artikel",
         });
     }
 });
 
-app.post("/posts", async (req, res) => {
-    try {
-        const validation = postSchema.safeParse(req.body);
+app.post(
+    "/posts",
+    (req, res, next) => {
+        upload.single("image")(req, res, (error) => {
+            if (error) {
+                res.status(400).json({
+                    success: false,
+                    message: error.message,
+                });
 
-        if (!validation.success) {
-            res.status(400).json({
-                success: false,
-                message: "Data tidak valid",
-                errors: validation.error.issues
-            });
+                return;
+            }
 
-            return;
-        }
-
-        const { title, content, category_id } = validation.data;
-
-        const [category] = await db.query(
-            "SELECT id FROM categories WHERE id = ?",
-            [category_id]
-        );
-
-        if ((category as any[]).length === 0) {
-            res.status(400).json({
-                success: false,
-                message: "Kategori tidak ditemukan"
-            });
-
-            return;
-        }
-
-        const [result] = await db.query(
-            `
-            INSERT INTO posts
-            (title, content, category_id)
-            VALUES (?, ?, ?)
-            `,
-            [title, content, category_id]
-        );
-
-        res.status(201).json({
-            success: true,
-            message: "Artikel berhasil ditambahkan",
-            data: result
+            next();
         });
-    } catch (error) {
-        console.error(error);
+    },
+    async (req, res) => {
+        try {
+            const parsedBody = {
+                title: req.body.title,
+                content: req.body.content,
+                category_id: Number(req.body.category_id),
+            };
 
-        res.status(500).json({
-            success: false,
-            message: "Gagal menambahkan artikel"
-        });
+            const validation = postSchema.safeParse(parsedBody);
+
+            if (!validation.success) {
+                if (req.file) {
+                    fs.unlink(req.file.path, () => {});
+                }
+
+                res.status(400).json({
+                    success: false,
+                    message: "Data tidak valid",
+                    errors: validation.error.issues,
+                });
+
+                return;
+            }
+
+            const { title, content, category_id } = validation.data;
+
+            const [category] = await db.query(
+                "SELECT id FROM categories WHERE id = ?",
+                [category_id]
+            );
+
+            if ((category as any[]).length === 0) {
+                if (req.file) {
+                    fs.unlink(req.file.path, () => {});
+                }
+
+                res.status(400).json({
+                    success: false,
+                    message: "Kategori tidak ditemukan",
+                });
+
+                return;
+            }
+
+            const [result] = await db.query(
+                `
+                INSERT INTO posts
+                (title, content, category_id)
+                VALUES (?, ?, ?)
+                `,
+                [title, content, category_id]
+            );
+
+            res.status(201).json({
+                success: true,
+                message: "Artikel berhasil ditambahkan",
+                data: result,
+            });
+        } catch (error) {
+            console.error(error);
+
+            if (req.file) {
+                fs.unlink(req.file.path, () => {});
+            }
+
+            res.status(500).json({
+                success: false,
+                message: "Gagal menambahkan artikel",
+            });
+        }
     }
-});
+);
 
 app.put("/posts/:id", async (req, res) => {
     try {
@@ -164,7 +267,7 @@ app.put("/posts/:id", async (req, res) => {
             res.status(400).json({
                 success: false,
                 message: "Data tidak valid",
-                errors: validation.error.issues
+                errors: validation.error.issues,
             });
 
             return;
@@ -180,7 +283,7 @@ app.put("/posts/:id", async (req, res) => {
         if ((category as any[]).length === 0) {
             res.status(400).json({
                 success: false,
-                message: "Kategori tidak ditemukan"
+                message: "Kategori tidak ditemukan",
             });
 
             return;
@@ -194,7 +297,7 @@ app.put("/posts/:id", async (req, res) => {
         if ((post as any[]).length === 0) {
             res.status(404).json({
                 success: false,
-                message: "Artikel tidak ditemukan"
+                message: "Artikel tidak ditemukan",
             });
 
             return;
@@ -212,14 +315,14 @@ app.put("/posts/:id", async (req, res) => {
         res.status(200).json({
             success: true,
             message: "Artikel berhasil diperbarui",
-            data: result
+            data: result,
         });
     } catch (error) {
         console.error(error);
 
         res.status(500).json({
             success: false,
-            message: "Gagal memperbarui artikel"
+            message: "Gagal memperbarui artikel",
         });
     }
 });
@@ -236,7 +339,7 @@ app.delete("/posts/:id", async (req, res) => {
         if ((post as any[]).length === 0) {
             res.status(404).json({
                 success: false,
-                message: "Artikel tidak ditemukan"
+                message: "Artikel tidak ditemukan",
             });
 
             return;
@@ -250,14 +353,14 @@ app.delete("/posts/:id", async (req, res) => {
         res.status(200).json({
             success: true,
             message: "Artikel berhasil dihapus",
-            data: result
+            data: result,
         });
     } catch (error) {
         console.error(error);
 
         res.status(500).json({
             success: false,
-            message: "Gagal menghapus artikel"
+            message: "Gagal menghapus artikel",
         });
     }
 });
