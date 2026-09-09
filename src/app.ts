@@ -96,18 +96,19 @@ app.get("/categories", async (_req, res) => {
 
 app.get("/posts", async (_req, res) => {
     try {
-        const [rows] = await db.query(`
-            SELECT
-                posts.id,
-                posts.title,
-                posts.content,
-                posts.category_id,
-                categories.name AS category
-            FROM posts
-            JOIN categories
-                ON posts.category_id = categories.id
-            ORDER BY posts.id DESC
-        `);
+       const [rows] = await db.query(`
+    SELECT
+        posts.id,
+        posts.title,
+        posts.content,
+        posts.category_id,
+        posts.image,
+        categories.name AS category
+    FROM posts
+    JOIN categories
+        ON posts.category_id = categories.id
+    ORDER BY posts.id DESC
+`);
 
         res.status(200).json({
             success: true,
@@ -159,7 +160,7 @@ app.get("/posts/:id", async (req, res) => {
             data: (rows as any[])[0],
         });
     } catch (error) {
-        console.error(error);
+        console.error("GET /posts ERROR:", error);
 
         res.status(500).json({
             success: false,
@@ -228,13 +229,15 @@ app.post(
                 return;
             }
 
+            const image = req.file ? `/uploads/${req.file.filename}` : null;
+
             const [result] = await db.query(
                 `
                 INSERT INTO posts
-                (title, content, category_id)
-                VALUES (?, ?, ?)
+                (title, content, category_id, image)
+                VALUES (?, ?, ?, ?)
                 `,
-                [title, content, category_id]
+                [title, content, category_id, image]
             );
 
             res.status(201).json({
