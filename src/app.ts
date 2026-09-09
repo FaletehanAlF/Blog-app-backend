@@ -10,7 +10,14 @@ import { fileURLToPath } from "url";
 const app = express();
 
 app.use(cors());
-app.use(express.json());
+
+const jsonParser = express.json();
+app.use((req, res, next) => {
+    if (req.method === "POST" && req.path === "/posts") {
+        return next();
+    }
+    return jsonParser(req, res, next);
+});
 
 const port = 8000;
 
@@ -56,10 +63,10 @@ const upload = multer({
     fileFilter: (_req, file, cb) => {
         const ext = path.extname(file.originalname).toLowerCase();
 
-        if (
-            allowedMimeTypes.includes(file.mimetype) &&
-            allowedExts.includes(ext)
-        ) {
+        // Perbaikan untuk Flutter Web: hanya cek ekstensi, tidak wajib keduanya (mimetype && ext)
+        // Flutter Web sering mengirim mimetype = application/octet-stream atau kosong
+        // sehingga validasi lama (mimetype && ext) selalu gagal
+        if (allowedExts.includes(ext)) {
             cb(null, true);
         } else {
             cb(
@@ -136,6 +143,7 @@ app.get("/posts/:id", async (req, res) => {
                 posts.title,
                 posts.content,
                 posts.category_id,
+                posts.image,
                 categories.name AS category
             FROM posts
             JOIN categories
@@ -172,8 +180,34 @@ app.get("/posts/:id", async (req, res) => {
 app.post(
     "/posts",
     (req, res, next) => {
-        upload.single("image")(req, res, (error) => {
+        // Ketentuan 13: Jangan menerima JSON sebagai body untuk POST /posts
+        const contentType = req.headers["content-type"] || "";
+        if (contentType.includes("application/json")) {
+            res.status(400).json({
+                success: false,
+                message: "Content-Type harus multipart/form-data, bukan application/json",
+            });
+            return;
+        }
+
+        // Pastikan upload.single("image") berjalan sebelum mengakses req.body
+        upload.single("image")(req, res, (error: any) => {
             if (error) {
+                if (error instanceof multer.MulterError) {
+                    if (error.code === "LIMIT_FILE_SIZE") {
+                        res.status(400).json({
+                            success: false,
+                            message: "Ukuran file maksimal 5 MB",
+                        });
+                        return;
+                    }
+                    res.status(400).json({
+                        success: false,
+                        message: error.message,
+                    });
+                    return;
+                }
+
                 res.status(400).json({
                     success: false,
                     message: error.message,
@@ -187,10 +221,12 @@ app.post(
     },
     async (req, res) => {
         try {
+            // Pastikan req.body dapat dibaca dari multipart/form-data
+            // category_id dari multipart harus dikonversi dari string menjadi number sebelum divalidasi Zod
             const parsedBody = {
-                title: req.body.title,
-                content: req.body.content,
-                category_id: Number(req.body.category_id),
+                title: req.body?.title,
+                content: req.body?.content,
+                category_id: Number(req.body?.category_id),
             };
 
             const validation = postSchema.safeParse(parsedBody);
@@ -365,6 +401,42 @@ app.delete("/posts/:id", async (req, res) => {
             success: false,
             message: "Gagal menghapus artikel",
         });
+    }
+});
+
+// Global error handler untuk SyntaxError JSON (mencegah crash dan tetap format JSON)
+app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    if (err instanceof SyntaxError && (err as any).status === 400 && "body" in err) {
+        console.error("SyntaxError JSON:", err);
+        res.status(400).json({
+            success: false,
+            message: "Format JSON tidak valid",
+        });
+        return;
+    }
+
+    if (err instanceof multer.MulterError) {
+        if (err.code === "LIMIT_FILE_SIZE") {
+            res.status(400).json({
+                success: false,
+                message: "Ukuran file maksimal 5 MB",
+            });
+            return;
+        }
+        res.status(400).json({
+            success: false,
+            message: err.message,
+        });
+        return;
+    }
+
+    if (err) {
+        console.error("Unhandled error:", err);
+        res.status(err.status || 500).json({
+            success: false,
+            message: err.message || "Terjadi kesalahan server",
+        });
+        return;
     }
 });
 
