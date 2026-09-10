@@ -344,8 +344,6 @@ app.put(
                 return;
             }
 
-            // Ubah category_id dari string menjadi number
-            // karena multipart/form-data mengirim semua field sebagai string
             const parsedBody = {
                 title: req.body?.title,
                 content: req.body?.content,
@@ -441,7 +439,7 @@ app.put(
                     ]
                 );
             }
-            
+
             const [updatedRows] = await db.query(
                 `
                 SELECT
