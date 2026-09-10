@@ -411,8 +411,6 @@ app.put(
                         id,
                     ]
                 );
-
-                // Hapus gambar lama dari folder uploads
                 if (oldImage) {
                     const oldImagePath = path.join(
                         __dirname,
@@ -439,7 +437,6 @@ app.put(
                     ]
                 );
             }
-
             const [updatedRows] = await db.query(
                 `
                 SELECT
@@ -456,7 +453,6 @@ app.put(
                 `,
                 [id]
             );
-
             res.status(200).json({
                 success: true,
                 message: "Artikel berhasil diperbarui",
