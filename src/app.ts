@@ -287,75 +287,201 @@ app.post(
     }
 );
 
-app.put("/posts/:id", async (req, res) => {
-    try {
-        const { id } = req.params;
+app.put(
+    "/posts/:id",
+    (req, res, next) => {
+        upload.single("image")(req, res, (error: any) => {
+            if (error) {
+                if (error instanceof multer.MulterError) {
+                    if (error.code === "LIMIT_FILE_SIZE") {
+                        res.status(400).json({
+                            success: false,
+                            message: "Ukuran file maksimal 5 MB",
+                        });
+                        return;
+                    }
 
-        const validation = postSchema.safeParse(req.body);
+                    res.status(400).json({
+                        success: false,
+                        message: error.message,
+                    });
+                    return;
+                }
 
-        if (!validation.success) {
-            res.status(400).json({
-                success: false,
-                message: "Data tidak valid",
-                errors: validation.error.issues,
-            });
+                res.status(400).json({
+                    success: false,
+                    message: error.message,
+                });
 
-            return;
-        }
+                return;
+            }
 
-        const { title, content, category_id } = validation.data;
-
-        const [category] = await db.query(
-            "SELECT id FROM categories WHERE id = ?",
-            [category_id]
-        );
-
-        if ((category as any[]).length === 0) {
-            res.status(400).json({
-                success: false,
-                message: "Kategori tidak ditemukan",
-            });
-
-            return;
-        }
-
-        const [post] = await db.query(
-            "SELECT id FROM posts WHERE id = ?",
-            [id]
-        );
-
-        if ((post as any[]).length === 0) {
-            res.status(404).json({
-                success: false,
-                message: "Artikel tidak ditemukan",
-            });
-
-            return;
-        }
-
-        const [result] = await db.query(
-            `
-            UPDATE posts
-            SET title = ?, content = ?, category_id = ?
-            WHERE id = ?
-            `,
-            [title, content, category_id, id]
-        );
-
-        res.status(200).json({
-            success: true,
-            message: "Artikel berhasil diperbarui",
-            data: result,
+            next();
         });
-    } catch (error) {
-        console.error(error);
+    },
+    async (req, res) => {
+        try {
+            const { id } = req.params;
 
-        res.status(500).json({
-            success: false,
-            message: "Gagal memperbarui artikel",
-        });
+            // Ambil data artikel terlebih dahulu
+            const [postRows] = await db.query(
+                "SELECT id, image FROM posts WHERE id = ?",
+                [id]
+            );
+
+            const posts = postRows as any[];
+
+            if (posts.length === 0) {
+                if (req.file) {
+                    fs.unlink(req.file.path, () => {});
+                }
+
+                res.status(404).json({
+                    success: false,
+                    message: "Artikel tidak ditemukan",
+                });
+
+                return;
+            }
+
+            // Ubah category_id dari string menjadi number
+            // karena multipart/form-data mengirim semua field sebagai string
+            const parsedBody = {
+                title: req.body?.title,
+                content: req.body?.content,
+                category_id: Number(req.body?.category_id),
+            };
+
+            // Validasi menggunakan Zod
+            const validation = postSchema.safeParse(parsedBody);
+
+            if (!validation.success) {
+                // Hapus file baru jika validasi gagal
+                if (req.file) {
+                    fs.unlink(req.file.path, () => {});
+                }
+
+                res.status(400).json({
+                    success: false,
+                    message: "Data tidak valid",
+                    errors: validation.error.issues,
+                });
+
+                return;
+            }
+
+            const { title, content, category_id } = validation.data;
+
+            // Cek kategori
+            const [categoryRows] = await db.query(
+                "SELECT id FROM categories WHERE id = ?",
+                [category_id]
+            );
+
+            const categories = categoryRows as any[];
+
+            if (categories.length === 0) {
+                if (req.file) {
+                    fs.unlink(req.file.path, () => {});
+                }
+
+                res.status(400).json({
+                    success: false,
+                    message: "Kategori tidak ditemukan",
+                });
+
+                return;
+            }
+
+            const oldImage = posts[0].image;
+
+            // Jika user upload gambar baru
+            if (req.file) {
+                const newImage = `/uploads/${req.file.filename}`;
+
+                await db.query(
+                    `
+                    UPDATE posts
+                    SET title = ?, content = ?, category_id = ?, image = ?
+                    WHERE id = ?
+                    `,
+                    [
+                        title,
+                        content,
+                        category_id,
+                        newImage,
+                        id,
+                    ]
+                );
+
+                // Hapus gambar lama dari folder uploads
+                if (oldImage) {
+                    const oldImagePath = path.join(
+                        __dirname,
+                        "..",
+                        oldImage.replace(/^\/uploads\//, "uploads/")
+                    );
+
+                    if (fs.existsSync(oldImagePath)) {
+                        fs.unlink(oldImagePath, () => {});
+                    }
+                }
+            } else {
+                // Jika tidak upload gambar baru,
+                // gambar lama tetap digunakan
+                await db.query(
+                    `
+                    UPDATE posts
+                    SET title = ?, content = ?, category_id = ?
+                    WHERE id = ?
+                    `,
+                    [
+                        title,
+                        content,
+                        category_id,
+                        id,
+                    ]
+                );
+            }
+
+            // Ambil data terbaru setelah update
+            const [updatedRows] = await db.query(
+                `
+                SELECT
+                    posts.id,
+                    posts.title,
+                    posts.content,
+                    posts.category_id,
+                    posts.image,
+                    categories.name AS category
+                FROM posts
+                JOIN categories
+                    ON posts.category_id = categories.id
+                WHERE posts.id = ?
+                `,
+                [id]
+            );
+
+            res.status(200).json({
+                success: true,
+                message: "Artikel berhasil diperbarui",
+                data: (updatedRows as any[])[0],
+            });
+        } catch (error) {
+            console.error("PUT /posts ERROR:", error);
+
+            // Hapus file baru jika terjadi error
+            if (req.file) {
+                fs.unlink(req.file.path, () => {});
+            }
+
+            res.status(500).json({
+                success: false,
+                message: "Gagal memperbarui artikel",
+            });
+        }
     }
-});
+);
 
 app.delete("/posts/:id", async (req, res) => {
     try {
