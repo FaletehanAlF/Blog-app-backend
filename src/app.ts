@@ -441,8 +441,7 @@ app.put(
                     ]
                 );
             }
-
-            // Ambil data terbaru setelah update
+            
             const [updatedRows] = await db.query(
                 `
                 SELECT
