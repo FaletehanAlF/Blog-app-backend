@@ -323,7 +323,6 @@ app.put(
         try {
             const { id } = req.params;
 
-            // Ambil data artikel terlebih dahulu
             const [postRows] = await db.query(
                 "SELECT id, image FROM posts WHERE id = ?",
                 [id]
