@@ -427,8 +427,6 @@ app.put(
                     }
                 }
             } else {
-                // Jika tidak upload gambar baru,
-                // gambar lama tetap digunakan
                 await db.query(
                     `
                     UPDATE posts
@@ -470,7 +468,6 @@ app.put(
         } catch (error) {
             console.error("PUT /posts ERROR:", error);
 
-            // Hapus file baru jika terjadi error
             if (req.file) {
                 fs.unlink(req.file.path, () => {});
             }
@@ -521,7 +518,6 @@ app.delete("/posts/:id", async (req, res) => {
     }
 });
 
-// Global error handler untuk SyntaxError JSON (mencegah crash dan tetap format JSON)
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     if (err instanceof SyntaxError && (err as any).status === 400 && "body" in err) {
         console.error("SyntaxError JSON:", err);
