@@ -62,10 +62,6 @@ const upload = multer({
     },
     fileFilter: (_req, file, cb) => {
         const ext = path.extname(file.originalname).toLowerCase();
-
-        // Perbaikan untuk Flutter Web: hanya cek ekstensi, tidak wajib keduanya (mimetype && ext)
-        // Flutter Web sering mengirim mimetype = application/octet-stream atau kosong
-        // sehingga validasi lama (mimetype && ext) selalu gagal
         if (allowedExts.includes(ext)) {
             cb(null, true);
         } else {
@@ -180,7 +176,6 @@ app.get("/posts/:id", async (req, res) => {
 app.post(
     "/posts",
     (req, res, next) => {
-        // Ketentuan 13: Jangan menerima JSON sebagai body untuk POST /posts
         const contentType = req.headers["content-type"] || "";
         if (contentType.includes("application/json")) {
             res.status(400).json({
@@ -189,8 +184,6 @@ app.post(
             });
             return;
         }
-
-        // Pastikan upload.single("image") berjalan sebelum mengakses req.body
         upload.single("image")(req, res, (error: any) => {
             if (error) {
                 if (error instanceof multer.MulterError) {
@@ -220,9 +213,7 @@ app.post(
         });
     },
     async (req, res) => {
-        try {
-            // Pastikan req.body dapat dibaca dari multipart/form-data
-            // category_id dari multipart harus dikonversi dari string menjadi number sebelum divalidasi Zod
+        try { 
             const parsedBody = {
                 title: req.body?.title,
                 content: req.body?.content,
