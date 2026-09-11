@@ -98,6 +98,42 @@ app.get("/categories", async (_req, res) => {
     }
 });
 
+app.post("/categories", async (req, res) => {
+    try {
+        const validation = categorySchema.safeParse(req.body);
+
+        if (!validation.success) {
+            res.status(400).json({
+                success: false,
+                message: "Data tidak valid",
+                errors: validation.error.issues,
+            });
+
+            return;
+        }
+
+        const { name } = validation.data;
+
+        const [result] = await db.query(
+            "INSERT INTO categories (name) VALUES (?)",
+            [name]
+        );
+
+        res.status(201).json({
+            success: true,
+            message: "Kategori berhasil ditambahkan",
+            data: result,
+        });
+    } catch (error) {
+        console.error(error);
+
+        res.status(500).json({
+            success: false,
+            message: "Gagal menambahkan kategori",
+        });
+    }
+});
+
 app.get("/posts", async (_req, res) => {
     try {
        const [rows] = await db.query(`
