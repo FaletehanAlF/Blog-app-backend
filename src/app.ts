@@ -6,6 +6,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
+import { categorySchema } from "./schemas/category.schema.js";
 
 const app = express();
 
