@@ -134,6 +134,42 @@ app.post("/categories", async (req, res) => {
     }
 });
 
+app.put("/categories/:id", async (req, res) => {
+    try {
+        const validation = categorySchema.safeParse(req.body);
+
+        if (!validation.success) {
+            res.status(400).json({
+                success: false,
+                message: "Data tidak valid",
+                errors: validation.error.issues,
+            });
+            return;
+        }
+
+        const { name } = validation.data;
+        const { id } = req.params;
+
+        const [result] = await db.query(
+            "UPDATE categories SET name = ? WHERE id = ?",
+            [name, id]
+        );
+
+        res.status(200).json({
+            success: true,
+            message: "Kategori berhasil diubah",
+            data: result,
+        });
+    } catch (error) {
+        console.error(error);
+
+        res.status(500).json({
+            success: false,
+            message: "Gagal mengubah kategori",
+        });
+    }
+});
+
 app.get("/posts", async (_req, res) => {
     try {
        const [rows] = await db.query(`
