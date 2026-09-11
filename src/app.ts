@@ -170,6 +170,44 @@ app.put("/categories/:id", async (req, res) => {
     }
 });
 
+app.delete("/categories/:id", async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        // Cek apakah kategori masih digunakan oleh artikel
+        const [posts] = await db.query(
+            "SELECT id FROM posts WHERE category_id = ?",
+            [id]
+        );
+
+        if ((posts as any[]).length > 0) {
+            res.status(400).json({
+                success: false,
+                message: "Kategori tidak dapat dihapus karena masih digunakan oleh artikel",
+            });
+            return;
+        }
+
+        const [result] = await db.query(
+            "DELETE FROM categories WHERE id = ?",
+            [id]
+        );
+
+        res.status(200).json({
+            success: true,
+            message: "Kategori berhasil dihapus",
+            data: result,
+        });
+    } catch (error) {
+        console.error(error);
+
+        res.status(500).json({
+            success: false,
+            message: "Gagal menghapus kategori",
+        });
+    }
+});
+
 app.get("/posts", async (_req, res) => {
     try {
        const [rows] = await db.query(`
