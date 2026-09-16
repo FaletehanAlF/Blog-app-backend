@@ -95,7 +95,7 @@ app.get("/categories", authMiddleware, async (_req, res) => {
   }
 });
 
-app.post("/categories", async (req, res) => {
+app.post("/categories", authMiddleware, roleMiddleware("admin"), async (req, res) => {
   try {
     const validation = categorySchema.safeParse(req.body);
 
@@ -131,7 +131,7 @@ app.post("/categories", async (req, res) => {
   }
 });
 
-app.put("/categories/:id", async (req, res) => {
+app.put("/categories/:id", authMiddleware, roleMiddleware("admin"), async (req, res) => {
   try {
     const validation = categorySchema.safeParse(req.body);
 
@@ -168,7 +168,7 @@ app.put("/categories/:id", async (req, res) => {
   }
 });
 
-app.delete("/categories/:id", authMiddleware, async (req, res) => {
+app.delete("/categories/:id", authMiddleware, roleMiddleware("admin"), async (req, res) => {
   try {
     const { id } = req.params;
 
