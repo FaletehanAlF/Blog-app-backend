@@ -13,15 +13,17 @@ const app = express();
 
 app.use(cors());
 
-app.use("/auth", authRoutes);
-
 const jsonParser = express.json();
+
 app.use((req, res, next) => {
     if (req.method === "POST" && req.path === "/posts") {
         return next();
     }
+
     return jsonParser(req, res, next);
 });
+
+app.use("/auth", authRoutes);
 
 const port = 8000;
 
@@ -37,6 +39,7 @@ const storage = multer.diskStorage({
     destination: (_req, _file, cb) => {
         cb(null, uploadsDir);
     },
+
     filename: (_req, file, cb) => {
         const ext = path.extname(file.originalname).toLowerCase();
         const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
@@ -44,13 +47,6 @@ const storage = multer.diskStorage({
         cb(null, uniqueName);
     },
 });
-
-const allowedMimeTypes = [
-    "image/jpeg",
-    "image/jpg",
-    "image/png",
-    "image/webp",
-];
 
 const allowedExts = [
     ".jpg",
@@ -64,8 +60,10 @@ const upload = multer({
     limits: {
         fileSize: 5 * 1024 * 1024,
     },
+
     fileFilter: (_req, file, cb) => {
         const ext = path.extname(file.originalname).toLowerCase();
+
         if (allowedExts.includes(ext)) {
             cb(null, true);
         } else {
@@ -147,6 +145,7 @@ app.put("/categories/:id", async (req, res) => {
                 message: "Data tidak valid",
                 errors: validation.error.issues,
             });
+
             return;
         }
 
@@ -185,8 +184,10 @@ app.delete("/categories/:id", async (req, res) => {
         if ((posts as any[]).length > 0) {
             res.status(400).json({
                 success: false,
-                message: "Kategori tidak dapat dihapus karena masih digunakan oleh artikel",
+                message:
+                    "Kategori tidak dapat dihapus karena masih digunakan oleh artikel",
             });
+
             return;
         }
 
@@ -212,19 +213,19 @@ app.delete("/categories/:id", async (req, res) => {
 
 app.get("/posts", async (_req, res) => {
     try {
-    const [rows] = await db.query(`
-    SELECT
-        posts.id,
-        posts.title,
-        posts.content,
-        posts.category_id,
-        posts.image,
-        categories.name AS category
-    FROM posts
-    JOIN categories
-        ON posts.category_id = categories.id
-    ORDER BY posts.id DESC
-`);
+        const [rows] = await db.query(`
+            SELECT
+                posts.id,
+                posts.title,
+                posts.content,
+                posts.category_id,
+                posts.image,
+                categories.name AS category
+            FROM posts
+            JOIN categories
+                ON posts.category_id = categories.id
+            ORDER BY posts.id DESC
+        `);
 
         res.status(200).json({
             success: true,
@@ -290,13 +291,17 @@ app.post(
     "/posts",
     (req, res, next) => {
         const contentType = req.headers["content-type"] || "";
+
         if (contentType.includes("application/json")) {
             res.status(400).json({
                 success: false,
-                message: "Content-Type harus multipart/form-data, bukan application/json",
+                message:
+                    "Content-Type harus multipart/form-data, bukan application/json",
             });
+
             return;
         }
+
         upload.single("image")(req, res, (error: any) => {
             if (error) {
                 if (error instanceof multer.MulterError) {
@@ -305,12 +310,15 @@ app.post(
                             success: false,
                             message: "Ukuran file maksimal 5 MB",
                         });
+
                         return;
                     }
+
                     res.status(400).json({
                         success: false,
                         message: error.message,
                     });
+
                     return;
                 }
 
@@ -325,8 +333,9 @@ app.post(
             next();
         });
     },
+
     async (req, res) => {
-        try { 
+        try {
             const parsedBody = {
                 title: req.body?.title,
                 content: req.body?.content,
@@ -369,7 +378,9 @@ app.post(
                 return;
             }
 
-            const image = req.file ? `/uploads/${req.file.filename}` : null;
+            const image = req.file
+                ? `/uploads/${req.file.filename}`
+                : null;
 
             const [result] = await db.query(
                 `
@@ -411,6 +422,7 @@ app.put(
                             success: false,
                             message: "Ukuran file maksimal 5 MB",
                         });
+
                         return;
                     }
 
@@ -418,6 +430,7 @@ app.put(
                         success: false,
                         message: error.message,
                     });
+
                     return;
                 }
 
@@ -432,6 +445,7 @@ app.put(
             next();
         });
     },
+
     async (req, res) => {
         try {
             const { id } = req.params;
@@ -462,11 +476,9 @@ app.put(
                 category_id: Number(req.body?.category_id),
             };
 
-            // Validasi menggunakan Zod
             const validation = postSchema.safeParse(parsedBody);
 
             if (!validation.success) {
-                // Hapus file baru jika validasi gagal
                 if (req.file) {
                     fs.unlink(req.file.path, () => {});
                 }
@@ -482,7 +494,6 @@ app.put(
 
             const { title, content, category_id } = validation.data;
 
-            // Cek kategori
             const [categoryRows] = await db.query(
                 "SELECT id FROM categories WHERE id = ?",
                 [category_id]
@@ -505,7 +516,6 @@ app.put(
 
             const oldImage = posts[0].image;
 
-            // Jika user upload gambar baru
             if (req.file) {
                 const newImage = `/uploads/${req.file.filename}`;
 
@@ -523,11 +533,15 @@ app.put(
                         id,
                     ]
                 );
+
                 if (oldImage) {
                     const oldImagePath = path.join(
                         __dirname,
                         "..",
-                        oldImage.replace(/^\/uploads\//, "uploads/")
+                        oldImage.replace(
+                            /^\/uploads\//,
+                            "uploads/"
+                        )
                     );
 
                     if (fs.existsSync(oldImagePath)) {
@@ -549,6 +563,7 @@ app.put(
                     ]
                 );
             }
+
             const [updatedRows] = await db.query(
                 `
                 SELECT
@@ -565,6 +580,7 @@ app.put(
                 `,
                 [id]
             );
+
             res.status(200).json({
                 success: true,
                 message: "Artikel berhasil diperbarui",
@@ -623,40 +639,58 @@ app.delete("/posts/:id", async (req, res) => {
     }
 });
 
-app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-    if (err instanceof SyntaxError && (err as any).status === 400 && "body" in err) {
-        console.error("SyntaxError JSON:", err);
-        res.status(400).json({
-            success: false,
-            message: "Format JSON tidak valid",
-        });
-        return;
-    }
+app.use(
+    (
+        err: any,
+        _req: express.Request,
+        res: express.Response,
+        _next: express.NextFunction
+    ) => {
+        if (
+            err instanceof SyntaxError &&
+            (err as any).status === 400 &&
+            "body" in err
+        ) {
+            console.error("SyntaxError JSON:", err);
 
-    if (err instanceof multer.MulterError) {
-        if (err.code === "LIMIT_FILE_SIZE") {
             res.status(400).json({
                 success: false,
-                message: "Ukuran file maksimal 5 MB",
+                message: "Format JSON tidak valid",
             });
+
             return;
         }
-        res.status(400).json({
-            success: false,
-            message: err.message,
-        });
-        return;
-    }
 
-    if (err) {
-        console.error("Unhandled error:", err);
-        res.status(err.status || 500).json({
-            success: false,
-            message: err.message || "Terjadi kesalahan server",
-        });
-        return;
+        if (err instanceof multer.MulterError) {
+            if (err.code === "LIMIT_FILE_SIZE") {
+                res.status(400).json({
+                    success: false,
+                    message: "Ukuran file maksimal 5 MB",
+                });
+
+                return;
+            }
+
+            res.status(400).json({
+                success: false,
+                message: err.message,
+            });
+
+            return;
+        }
+
+        if (err) {
+            console.error("Unhandled error:", err);
+
+            res.status(err.status || 500).json({
+                success: false,
+                message: err.message || "Terjadi kesalahan server",
+            });
+
+            return;
+        }
     }
-});
+);
 
 app.listen(port, () => {
     console.log(`Server is running on http://localhost:${port}`);
