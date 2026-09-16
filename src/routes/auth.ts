@@ -79,7 +79,7 @@ router.post("/login", async (req, res) => {
         const { email, password } = validation.data;
 
         const [rows] = await db.query(
-            "SELECT id, name, email, password FROM users WHERE email = ?",
+            "SELECT id, name, email, password, role FROM users WHERE email = ?",
             [email]
         );
 
@@ -110,6 +110,7 @@ router.post("/login", async (req, res) => {
             {
                 id: user.id,
                 email: user.email,
+                role: user.role,
             },
             process.env.JWT_SECRET as string,
             {
