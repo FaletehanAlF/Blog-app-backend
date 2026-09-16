@@ -8,6 +8,7 @@ import fs from "fs";
 import { fileURLToPath } from "url";
 import { categorySchema } from "./schemas/category.schema.js";
 import authRoutes from "./routes/auth.js";
+import authMiddleware from "./middleware/authMiddleware.js";
 import "dotenv/config";
 
 const app = express();
@@ -212,7 +213,7 @@ app.delete("/categories/:id", async (req, res) => {
     }
 });
 
-app.get("/posts", async (_req, res) => {
+app.get("/posts", authMiddleware, async (_req, res) => {
     try {
         const [rows] = await db.query(`
             SELECT
