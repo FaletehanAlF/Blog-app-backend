@@ -391,10 +391,10 @@ app.post(
             const [result] = await db.query(
                 `
                 INSERT INTO posts
-                (title, content, category_id, image)
-                VALUES (?, ?, ?, ?)
+                (title, content, category_id, image, user_id)
+                VALUES (?, ?, ?, ?, ?)
                 `,
-                [title, content, category_id, image]
+                [title, content, category_id, image, userId]
             );
 
             res.status(201).json({

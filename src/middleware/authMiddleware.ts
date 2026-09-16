@@ -1,4 +1,4 @@
-import type { Request, Response, NextFunction } from "express";
+import type { NextFunction, Request, Response } from "express";
 import jwt from "jsonwebtoken";
 
 const authMiddleware = (
@@ -8,7 +8,7 @@ const authMiddleware = (
 ) => {
     const authHeader = req.headers.authorization;
 
-    if (!authHeader) {
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
         return res.status(401).json({
             success: false,
             message: "Token tidak ditemukan",
@@ -27,6 +27,8 @@ const authMiddleware = (
 
         next();
     } catch (error) {
+        console.error("JWT ERROR:", error);
+
         return res.status(401).json({
             success: false,
             message: "Token tidak valid atau sudah expired",
