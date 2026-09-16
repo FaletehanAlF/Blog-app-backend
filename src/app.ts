@@ -76,7 +76,7 @@ const upload = multer({
 
 app.use("/uploads", express.static(uploadsDir));
 
-app.get("/categories", async (_req, res) => {
+app.get("/categories", authMiddleware, async (_req, res) => {
   try {
     const [rows] = await db.query("SELECT * FROM categories");
 
