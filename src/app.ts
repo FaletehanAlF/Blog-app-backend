@@ -7,10 +7,13 @@ import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
 import { categorySchema } from "./schemas/category.schema.js";
+import authRoutes from "./routes/auth.js";
 
 const app = express();
 
 app.use(cors());
+
+app.use("/auth", authRoutes);
 
 const jsonParser = express.json();
 app.use((req, res, next) => {
