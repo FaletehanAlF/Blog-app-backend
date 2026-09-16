@@ -456,21 +456,24 @@ app.put(
         try {
             const { id } = req.params;
 
+            const user = (req as any).user;
+            const userId = user.id;
+
             const [postRows] = await db.query(
-                "SELECT id, image FROM posts WHERE id = ?",
+                "SELECT id, image, user_id FROM posts WHERE id = ?",
                 [id]
             );
 
             const posts = postRows as any[];
 
-            if (posts.length === 0) {
+            if (posts[0].user_id !== userId) {
                 if (req.file) {
                     fs.unlink(req.file.path, () => {});
                 }
 
-                res.status(404).json({
+                res.status(403).json({
                     success: false,
-                    message: "Artikel tidak ditemukan",
+                    message: "Anda tidak memiliki akses untuk mengedit artikel ini",
                 });
 
                 return;
