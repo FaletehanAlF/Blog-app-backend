@@ -12,6 +12,14 @@ import authMiddleware from "./middleware/authMiddleware.js";
 import "dotenv/config";
 import roleMiddleware from "./middleware/roleMiddleware.js";
 
+const jwtSecret = process.env.JWT_SECRET;
+
+if (!jwtSecret || jwtSecret.length < 32) {
+  throw new Error(
+    "JWT_SECRET tidak tersedia atau terlalu pendek. Pastikan JWT_SECRET di .env minimal 32 karakter.",
+  );
+}
+
 const app = express();
 
 app.use(cors());
@@ -206,13 +214,9 @@ app.delete("/categories/:id", authMiddleware, roleMiddleware("admin"), async (re
   }
 });
 
-app.get(
-  "/posts",
-  authMiddleware,
-  roleMiddleware("admin", "user"),
-  async (_req, res) => {
-    try {
-      const [rows] = await db.query(`
+app.get("/posts", authMiddleware, async (_req, res) => {
+  try {
+    const [rows] = await db.query(`
             SELECT
                 posts.id,
                 posts.title,
@@ -226,21 +230,20 @@ app.get(
             ORDER BY posts.id DESC
         `);
 
-      res.status(200).json({
-        success: true,
-        message: "Berhasil mengambil data artikel",
-        data: rows,
-      });
-    } catch (error) {
-      console.error(error);
+    res.status(200).json({
+      success: true,
+      message: "Berhasil mengambil data artikel",
+      data: rows,
+    });
+  } catch (error) {
+    console.error(error);
 
-      res.status(500).json({
-        success: false,
-        message: "Gagal mengambil data artikel",
-      });
-    }
-  },
-);
+    res.status(500).json({
+      success: false,
+      message: "Gagal mengambil data artikel",
+    });
+  }
+});
 
 app.get("/posts/:id", authMiddleware, async (req, res) => {
   try {
@@ -453,7 +456,7 @@ app.put(
       const { id } = req.params;
 
       const user = (req as any).user;
-      const userId = user.id;
+      const userId = Number((req as any).user.id);
 
       const [postRows] = await db.query(
         "SELECT id, image, user_id FROM posts WHERE id = ?",
@@ -469,7 +472,7 @@ app.put(
         });
       }
 
-      if (posts[0].user_id !== userId && user.role !== "admin") {
+      if (Number(posts[0].user_id) !== userId && user.role !== "admin") {
         if (req.file) {
           fs.unlink(req.file.path, () => {});
         }
@@ -603,7 +606,7 @@ app.delete("/posts/:id", authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
     const user = (req as any).user;
-    const userId = user.id;
+    const userId = Number((req as any).user.id);
 
     const [postRows] = await db.query(
       "SELECT id, image, user_id FROM posts WHERE id = ?",
@@ -612,14 +615,35 @@ app.delete("/posts/:id", authMiddleware, async (req, res) => {
 
     const posts = postRows as any[];
 
-    if (posts[0].user_id !== userId && user.role !== "admin") {
+    if (posts.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Artikel tidak ditemukan",
+      });
+    }
+
+    if (Number(posts[0].user_id) !== userId && user.role !== "admin") {
       return res.status(403).json({
         success: false,
         message: "Anda tidak memiliki akses untuk menghapus artikel ini",
       });
     }
 
+    const oldImage = posts[0].image;
+
     const [result] = await db.query("DELETE FROM posts WHERE id = ?", [id]);
+
+    if (oldImage) {
+      const oldImagePath = path.join(
+        __dirname,
+        "..",
+        (oldImage as string).replace(/^\/uploads\//, "uploads/"),
+      );
+
+      if (fs.existsSync(oldImagePath)) {
+        fs.unlink(oldImagePath, () => {});
+      }
+    }
 
     res.status(200).json({
       success: true,
