@@ -6,18 +6,35 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
+import { categorySchema } from "./schemas/category.schema.js";
+import authRoutes from "./routes/auth.js";
+import authMiddleware from "./middleware/authMiddleware.js";
+import "dotenv/config";
+import roleMiddleware from "./middleware/roleMiddleware.js";
+
+const jwtSecret = process.env.JWT_SECRET;
+
+if (!jwtSecret || jwtSecret.length < 32) {
+  throw new Error(
+    "JWT_SECRET tidak tersedia atau terlalu pendek. Pastikan JWT_SECRET di .env minimal 32 karakter.",
+  );
+}
 
 const app = express();
 
 app.use(cors());
 
 const jsonParser = express.json();
+
 app.use((req, res, next) => {
-    if (req.method === "POST" && req.path === "/posts") {
-        return next();
-    }
-    return jsonParser(req, res, next);
+  if (req.method === "POST" && req.path === "/posts") {
+    return next();
+  }
+
+  return jsonParser(req, res, next);
 });
+
+app.use("/auth", authRoutes);
 
 const port = 8000;
 
@@ -26,118 +43,214 @@ const __dirname = path.dirname(__filename);
 const uploadsDir = path.join(__dirname, "..", "uploads");
 
 if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true });
+  fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
 const storage = multer.diskStorage({
-    destination: (_req, _file, cb) => {
-        cb(null, uploadsDir);
-    },
-    filename: (_req, file, cb) => {
-        const ext = path.extname(file.originalname).toLowerCase();
-        const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
+  destination: (_req, _file, cb) => {
+    cb(null, uploadsDir);
+  },
 
-        cb(null, uniqueName);
-    },
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
+
+    cb(null, uniqueName);
+  },
 });
 
-const allowedMimeTypes = [
-    "image/jpeg",
-    "image/jpg",
-    "image/png",
-    "image/webp",
-];
-
-const allowedExts = [
-    ".jpg",
-    ".jpeg",
-    ".png",
-    ".webp",
-];
+const allowedExts = [".jpg", ".jpeg", ".png", ".webp"];
 
 const upload = multer({
-    storage,
-    limits: {
-        fileSize: 5 * 1024 * 1024,
-    },
-    fileFilter: (_req, file, cb) => {
-        const ext = path.extname(file.originalname).toLowerCase();
+  storage,
+  limits: {
+    fileSize: 5 * 1024 * 1024,
+  },
 
-        // Perbaikan untuk Flutter Web: hanya cek ekstensi, tidak wajib keduanya (mimetype && ext)
-        // Flutter Web sering mengirim mimetype = application/octet-stream atau kosong
-        // sehingga validasi lama (mimetype && ext) selalu gagal
-        if (allowedExts.includes(ext)) {
-            cb(null, true);
-        } else {
-            cb(
-                new Error(
-                    "Hanya file gambar (jpg, jpeg, png, webp) yang diperbolehkan"
-                )
-            );
-        }
-    },
+  fileFilter: (_req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+
+    if (allowedExts.includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(
+        new Error(
+          "Hanya file gambar (jpg, jpeg, png, webp) yang diperbolehkan",
+        ),
+      );
+    }
+  },
 });
 
 app.use("/uploads", express.static(uploadsDir));
 
-app.get("/categories", async (_req, res) => {
-    try {
-        const [rows] = await db.query(
-            "SELECT * FROM categories"
-        );
+app.get("/categories", authMiddleware, async (_req, res) => {
+  try {
+    const [rows] = await db.query("SELECT * FROM categories");
 
-        res.status(200).json({
-            success: true,
-            message: "Berhasil mengambil data kategori",
-            data: rows,
-        });
-    } catch (error) {
-        console.error(error);
+    res.status(200).json({
+      success: true,
+      message: "Berhasil mengambil data kategori",
+      data: rows,
+    });
+  } catch (error) {
+    console.error(error);
 
-        res.status(500).json({
-            success: false,
-            message: "Gagal mengambil data kategori",
-        });
-    }
+    res.status(500).json({
+      success: false,
+      message: "Gagal mengambil data kategori",
+    });
+  }
 });
 
-app.get("/posts", async (_req, res) => {
-    try {
-       const [rows] = await db.query(`
-    SELECT
-        posts.id,
-        posts.title,
-        posts.content,
-        posts.category_id,
-        posts.image,
-        categories.name AS category
-    FROM posts
-    JOIN categories
-        ON posts.category_id = categories.id
-    ORDER BY posts.id DESC
-`);
+app.post("/categories", authMiddleware, roleMiddleware("admin"), async (req, res) => {
+  try {
+    const validation = categorySchema.safeParse(req.body);
 
-        res.status(200).json({
-            success: true,
-            message: "Berhasil mengambil data artikel",
-            data: rows,
-        });
-    } catch (error) {
-        console.error(error);
+    if (!validation.success) {
+      res.status(400).json({
+        success: false,
+        message: "Data tidak valid",
+        errors: validation.error.issues,
+      });
 
-        res.status(500).json({
-            success: false,
-            message: "Gagal mengambil data artikel",
-        });
+      return;
     }
+
+    const { name } = validation.data;
+
+    const [result] = await db.query(
+      "INSERT INTO categories (name) VALUES (?)",
+      [name],
+    );
+
+    res.status(201).json({
+      success: true,
+      message: "Kategori berhasil ditambahkan",
+      data: result,
+    });
+  } catch (error) {
+    console.error(error);
+
+    res.status(500).json({
+      success: false,
+      message: "Gagal menambahkan kategori",
+    });
+  }
 });
 
-app.get("/posts/:id", async (req, res) => {
-    try {
-        const { id } = req.params;
+app.put("/categories/:id", authMiddleware, roleMiddleware("admin"), async (req, res) => {
+  try {
+    const validation = categorySchema.safeParse(req.body);
 
-        const [rows] = await db.query(
-            `
+    if (!validation.success) {
+      res.status(400).json({
+        success: false,
+        message: "Data tidak valid",
+        errors: validation.error.issues,
+      });
+
+      return;
+    }
+
+    const { name } = validation.data;
+    const { id } = req.params;
+
+    const [result] = await db.query(
+      "UPDATE categories SET name = ? WHERE id = ?",
+      [name, id],
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "Kategori berhasil diubah",
+      data: result,
+    });
+  } catch (error) {
+    console.error(error);
+
+    res.status(500).json({
+      success: false,
+      message: "Gagal mengubah kategori",
+    });
+  }
+});
+
+app.delete("/categories/:id", authMiddleware, roleMiddleware("admin"), async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const [posts] = await db.query(
+      "SELECT id FROM posts WHERE category_id = ?",
+      [id],
+    );
+
+    if ((posts as any[]).length > 0) {
+      res.status(400).json({
+        success: false,
+        message:
+          "Kategori tidak dapat dihapus karena masih digunakan oleh artikel",
+      });
+
+      return;
+    }
+
+    const [result] = await db.query("DELETE FROM categories WHERE id = ?", [
+      id,
+    ]);
+
+    res.status(200).json({
+      success: true,
+      message: "Kategori berhasil dihapus",
+      data: result,
+    });
+  } catch (error) {
+    console.error(error);
+
+    res.status(500).json({
+      success: false,
+      message: "Gagal menghapus kategori",
+    });
+  }
+});
+
+app.get("/posts", authMiddleware, async (_req, res) => {
+  try {
+    const [rows] = await db.query(`
+            SELECT
+                posts.id,
+                posts.title,
+                posts.content,
+                posts.category_id,
+                posts.image,
+                categories.name AS category
+            FROM posts
+            JOIN categories
+                ON posts.category_id = categories.id
+            ORDER BY posts.id DESC
+        `);
+
+    res.status(200).json({
+      success: true,
+      message: "Berhasil mengambil data artikel",
+      data: rows,
+    });
+  } catch (error) {
+    console.error(error);
+
+    res.status(500).json({
+      success: false,
+      message: "Gagal mengambil data artikel",
+    });
+  }
+});
+
+app.get("/posts/:id", authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const [rows] = await db.query(
+      `
             SELECT
                 posts.id,
                 posts.title,
@@ -150,296 +263,456 @@ app.get("/posts/:id", async (req, res) => {
                 ON posts.category_id = categories.id
             WHERE posts.id = ?
             `,
-            [id]
-        );
+      [id],
+    );
 
-        if ((rows as any[]).length === 0) {
-            res.status(404).json({
-                success: false,
-                message: "Artikel tidak ditemukan",
-            });
+    if ((rows as any[]).length === 0) {
+      res.status(404).json({
+        success: false,
+        message: "Artikel tidak ditemukan",
+      });
 
-            return;
-        }
-
-        res.status(200).json({
-            success: true,
-            message: "Berhasil mengambil detail artikel",
-            data: (rows as any[])[0],
-        });
-    } catch (error) {
-        console.error("GET /posts ERROR:", error);
-
-        res.status(500).json({
-            success: false,
-            message: "Gagal mengambil detail artikel",
-        });
+      return;
     }
+
+    res.status(200).json({
+      success: true,
+      message: "Berhasil mengambil detail artikel",
+      data: (rows as any[])[0],
+    });
+  } catch (error) {
+    console.error("GET /posts ERROR:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Gagal mengambil detail artikel",
+    });
+  }
 });
 
 app.post(
-    "/posts",
-    (req, res, next) => {
-        // Ketentuan 13: Jangan menerima JSON sebagai body untuk POST /posts
-        const contentType = req.headers["content-type"] || "";
-        if (contentType.includes("application/json")) {
-            res.status(400).json({
-                success: false,
-                message: "Content-Type harus multipart/form-data, bukan application/json",
-            });
-            return;
-        }
+  "/posts",
+  authMiddleware,
+  (req, res, next) => {
+    const contentType = req.headers["content-type"] || "";
 
-        // Pastikan upload.single("image") berjalan sebelum mengakses req.body
-        upload.single("image")(req, res, (error: any) => {
-            if (error) {
-                if (error instanceof multer.MulterError) {
-                    if (error.code === "LIMIT_FILE_SIZE") {
-                        res.status(400).json({
-                            success: false,
-                            message: "Ukuran file maksimal 5 MB",
-                        });
-                        return;
-                    }
-                    res.status(400).json({
-                        success: false,
-                        message: error.message,
-                    });
-                    return;
-                }
+    if (contentType.includes("application/json")) {
+      res.status(400).json({
+        success: false,
+        message:
+          "Content-Type harus multipart/form-data, bukan application/json",
+      });
 
-                res.status(400).json({
-                    success: false,
-                    message: error.message,
-                });
-
-                return;
-            }
-
-            next();
-        });
-    },
-    async (req, res) => {
-        try {
-            // Pastikan req.body dapat dibaca dari multipart/form-data
-            // category_id dari multipart harus dikonversi dari string menjadi number sebelum divalidasi Zod
-            const parsedBody = {
-                title: req.body?.title,
-                content: req.body?.content,
-                category_id: Number(req.body?.category_id),
-            };
-
-            const validation = postSchema.safeParse(parsedBody);
-
-            if (!validation.success) {
-                if (req.file) {
-                    fs.unlink(req.file.path, () => {});
-                }
-
-                res.status(400).json({
-                    success: false,
-                    message: "Data tidak valid",
-                    errors: validation.error.issues,
-                });
-
-                return;
-            }
-
-            const { title, content, category_id } = validation.data;
-
-            const [category] = await db.query(
-                "SELECT id FROM categories WHERE id = ?",
-                [category_id]
-            );
-
-            if ((category as any[]).length === 0) {
-                if (req.file) {
-                    fs.unlink(req.file.path, () => {});
-                }
-
-                res.status(400).json({
-                    success: false,
-                    message: "Kategori tidak ditemukan",
-                });
-
-                return;
-            }
-
-            const image = req.file ? `/uploads/${req.file.filename}` : null;
-
-            const [result] = await db.query(
-                `
-                INSERT INTO posts
-                (title, content, category_id, image)
-                VALUES (?, ?, ?, ?)
-                `,
-                [title, content, category_id, image]
-            );
-
-            res.status(201).json({
-                success: true,
-                message: "Artikel berhasil ditambahkan",
-                data: result,
-            });
-        } catch (error) {
-            console.error(error);
-
-            if (req.file) {
-                fs.unlink(req.file.path, () => {});
-            }
-
-            res.status(500).json({
-                success: false,
-                message: "Gagal menambahkan artikel",
-            });
-        }
+      return;
     }
+
+    upload.single("image")(req, res, (error: any) => {
+      if (error) {
+        if (error instanceof multer.MulterError) {
+          if (error.code === "LIMIT_FILE_SIZE") {
+            res.status(400).json({
+              success: false,
+              message: "Ukuran file maksimal 5 MB",
+            });
+
+            return;
+          }
+
+          res.status(400).json({
+            success: false,
+            message: error.message,
+          });
+
+          return;
+        }
+
+        res.status(400).json({
+          success: false,
+          message: error.message,
+        });
+
+        return;
+      }
+
+      next();
+    });
+  },
+
+  async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const userId = user.id;
+      const parsedBody = {
+        title: req.body?.title,
+        content: req.body?.content,
+        category_id: Number(req.body?.category_id),
+      };
+
+      const validation = postSchema.safeParse(parsedBody);
+
+      if (!validation.success) {
+        if (req.file) {
+          fs.unlink(req.file.path, () => {});
+        }
+
+        res.status(400).json({
+          success: false,
+          message: "Data tidak valid",
+          errors: validation.error.issues,
+        });
+
+        return;
+      }
+
+      const { title, content, category_id } = validation.data;
+
+      const [category] = await db.query(
+        "SELECT id FROM categories WHERE id = ?",
+        [category_id],
+      );
+
+      if ((category as any[]).length === 0) {
+        if (req.file) {
+          fs.unlink(req.file.path, () => {});
+        }
+
+        res.status(400).json({
+          success: false,
+          message: "Kategori tidak ditemukan",
+        });
+
+        return;
+      }
+
+      const image = req.file ? `/uploads/${req.file.filename}` : null;
+
+      const [result] = await db.query(
+        `
+                INSERT INTO posts
+                (title, content, category_id, image, user_id)
+                VALUES (?, ?, ?, ?, ?)
+                `,
+        [title, content, category_id, image, userId],
+      );
+
+      res.status(201).json({
+        success: true,
+        message: "Artikel berhasil ditambahkan",
+        data: result,
+      });
+    } catch (error) {
+      console.error(error);
+
+      if (req.file) {
+        fs.unlink(req.file.path, () => {});
+      }
+
+      res.status(500).json({
+        success: false,
+        message: "Gagal menambahkan artikel",
+      });
+    }
+  },
 );
 
-app.put("/posts/:id", async (req, res) => {
-    try {
-        const { id } = req.params;
-
-        const validation = postSchema.safeParse(req.body);
-
-        if (!validation.success) {
+app.put(
+  "/posts/:id",
+  authMiddleware,
+  (req, res, next) => {
+    upload.single("image")(req, res, (error: any) => {
+      if (error) {
+        if (error instanceof multer.MulterError) {
+          if (error.code === "LIMIT_FILE_SIZE") {
             res.status(400).json({
-                success: false,
-                message: "Data tidak valid",
-                errors: validation.error.issues,
+              success: false,
+              message: "Ukuran file maksimal 5 MB",
             });
 
             return;
-        }
+          }
 
-        const { title, content, category_id } = validation.data;
-
-        const [category] = await db.query(
-            "SELECT id FROM categories WHERE id = ?",
-            [category_id]
-        );
-
-        if ((category as any[]).length === 0) {
-            res.status(400).json({
-                success: false,
-                message: "Kategori tidak ditemukan",
-            });
-
-            return;
-        }
-
-        const [post] = await db.query(
-            "SELECT id FROM posts WHERE id = ?",
-            [id]
-        );
-
-        if ((post as any[]).length === 0) {
-            res.status(404).json({
-                success: false,
-                message: "Artikel tidak ditemukan",
-            });
-
-            return;
-        }
-
-        const [result] = await db.query(
-            `
-            UPDATE posts
-            SET title = ?, content = ?, category_id = ?
-            WHERE id = ?
-            `,
-            [title, content, category_id, id]
-        );
-
-        res.status(200).json({
-            success: true,
-            message: "Artikel berhasil diperbarui",
-            data: result,
-        });
-    } catch (error) {
-        console.error(error);
-
-        res.status(500).json({
+          res.status(400).json({
             success: false,
-            message: "Gagal memperbarui artikel",
-        });
-    }
-});
+            message: error.message,
+          });
 
-app.delete("/posts/:id", async (req, res) => {
-    try {
-        const { id } = req.params;
-
-        const [post] = await db.query(
-            "SELECT id FROM posts WHERE id = ?",
-            [id]
-        );
-
-        if ((post as any[]).length === 0) {
-            res.status(404).json({
-                success: false,
-                message: "Artikel tidak ditemukan",
-            });
-
-            return;
+          return;
         }
 
-        const [result] = await db.query(
-            "DELETE FROM posts WHERE id = ?",
-            [id]
-        );
-
-        res.status(200).json({
-            success: true,
-            message: "Artikel berhasil dihapus",
-            data: result,
-        });
-    } catch (error) {
-        console.error(error);
-
-        res.status(500).json({
-            success: false,
-            message: "Gagal menghapus artikel",
-        });
-    }
-});
-
-// Global error handler untuk SyntaxError JSON (mencegah crash dan tetap format JSON)
-app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-    if (err instanceof SyntaxError && (err as any).status === 400 && "body" in err) {
-        console.error("SyntaxError JSON:", err);
         res.status(400).json({
-            success: false,
-            message: "Format JSON tidak valid",
+          success: false,
+          message: error.message,
         });
+
         return;
+      }
+
+      next();
+    });
+  },
+
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const user = (req as any).user;
+      const userId = Number((req as any).user.id);
+
+      const [postRows] = await db.query(
+        "SELECT id, image, user_id FROM posts WHERE id = ?",
+        [id],
+      );
+
+      const posts = postRows as any[];
+
+      if (posts.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: "Artikel tidak ditemukan",
+        });
+      }
+
+      if (Number(posts[0].user_id) !== userId && user.role !== "admin") {
+        if (req.file) {
+          fs.unlink(req.file.path, () => {});
+        }
+
+        res.status(403).json({
+          success: false,
+          message: "Anda tidak memiliki akses untuk mengedit artikel ini",
+        });
+
+        return;
+      }
+
+      const parsedBody = {
+        title: req.body?.title,
+        content: req.body?.content,
+        category_id: Number(req.body?.category_id),
+      };
+
+      const validation = postSchema.safeParse(parsedBody);
+
+      if (!validation.success) {
+        if (req.file) {
+          fs.unlink(req.file.path, () => {});
+        }
+
+        res.status(400).json({
+          success: false,
+          message: "Data tidak valid",
+          errors: validation.error.issues,
+        });
+
+        return;
+      }
+
+      const { title, content, category_id } = validation.data;
+
+      const [categoryRows] = await db.query(
+        "SELECT id FROM categories WHERE id = ?",
+        [category_id],
+      );
+
+      const categories = categoryRows as any[];
+
+      if (categories.length === 0) {
+        if (req.file) {
+          fs.unlink(req.file.path, () => {});
+        }
+
+        res.status(400).json({
+          success: false,
+          message: "Kategori tidak ditemukan",
+        });
+
+        return;
+      }
+
+      const oldImage = posts[0].image;
+
+      if (req.file) {
+        const newImage = `/uploads/${req.file.filename}`;
+
+        await db.query(
+          `
+                    UPDATE posts
+                    SET title = ?, content = ?, category_id = ?, image = ?
+                    WHERE id = ?
+                    `,
+          [title, content, category_id, newImage, id],
+        );
+
+        if (oldImage) {
+          const oldImagePath = path.join(
+            __dirname,
+            "..",
+            oldImage.replace(/^\/uploads\//, "uploads/"),
+          );
+
+          if (fs.existsSync(oldImagePath)) {
+            fs.unlink(oldImagePath, () => {});
+          }
+        }
+      } else {
+        await db.query(
+          `
+                    UPDATE posts
+                    SET title = ?, content = ?, category_id = ?
+                    WHERE id = ?
+                    `,
+          [title, content, category_id, id],
+        );
+      }
+
+      const [updatedRows] = await db.query(
+        `
+                SELECT
+                    posts.id,
+                    posts.title,
+                    posts.content,
+                    posts.category_id,
+                    posts.image,
+                    categories.name AS category
+                FROM posts
+                JOIN categories
+                    ON posts.category_id = categories.id
+                WHERE posts.id = ?
+                `,
+        [id],
+      );
+
+      res.status(200).json({
+        success: true,
+        message: "Artikel berhasil diperbarui",
+        data: (updatedRows as any[])[0],
+      });
+    } catch (error) {
+      console.error("PUT /posts ERROR:", error);
+
+      if (req.file) {
+        fs.unlink(req.file.path, () => {});
+      }
+
+      res.status(500).json({
+        success: false,
+        message: "Gagal memperbarui artikel",
+      });
+    }
+  },
+);
+
+app.delete("/posts/:id", authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const user = (req as any).user;
+    const userId = Number((req as any).user.id);
+
+    const [postRows] = await db.query(
+      "SELECT id, image, user_id FROM posts WHERE id = ?",
+      [id],
+    );
+
+    const posts = postRows as any[];
+
+    if (posts.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Artikel tidak ditemukan",
+      });
+    }
+
+    if (Number(posts[0].user_id) !== userId && user.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Anda tidak memiliki akses untuk menghapus artikel ini",
+      });
+    }
+
+    const oldImage = posts[0].image;
+
+    const [result] = await db.query("DELETE FROM posts WHERE id = ?", [id]);
+
+    if (oldImage) {
+      const oldImagePath = path.join(
+        __dirname,
+        "..",
+        (oldImage as string).replace(/^\/uploads\//, "uploads/"),
+      );
+
+      if (fs.existsSync(oldImagePath)) {
+        fs.unlink(oldImagePath, () => {});
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Artikel berhasil dihapus",
+      data: result,
+    });
+  } catch (error) {
+    console.error(error);
+
+    res.status(500).json({
+      success: false,
+      message: "Gagal menghapus artikel",
+    });
+  }
+});
+
+app.use(
+  (
+    err: any,
+    _req: express.Request,
+    res: express.Response,
+    _next: express.NextFunction,
+  ) => {
+    if (
+      err instanceof SyntaxError &&
+      (err as any).status === 400 &&
+      "body" in err
+    ) {
+      console.error("SyntaxError JSON:", err);
+
+      res.status(400).json({
+        success: false,
+        message: "Format JSON tidak valid",
+      });
+
+      return;
     }
 
     if (err instanceof multer.MulterError) {
-        if (err.code === "LIMIT_FILE_SIZE") {
-            res.status(400).json({
-                success: false,
-                message: "Ukuran file maksimal 5 MB",
-            });
-            return;
-        }
+      if (err.code === "LIMIT_FILE_SIZE") {
         res.status(400).json({
-            success: false,
-            message: err.message,
+          success: false,
+          message: "Ukuran file maksimal 5 MB",
         });
+
         return;
+      }
+
+      res.status(400).json({
+        success: false,
+        message: err.message,
+      });
+
+      return;
     }
 
     if (err) {
-        console.error("Unhandled error:", err);
-        res.status(err.status || 500).json({
-            success: false,
-            message: err.message || "Terjadi kesalahan server",
-        });
-        return;
+      console.error("Unhandled error:", err);
+
+      res.status(err.status || 500).json({
+        success: false,
+        message: err.message || "Terjadi kesalahan server",
+      });
+
+      return;
     }
-});
+  },
+);
 
 app.listen(port, () => {
-    console.log(`Server is running on http://localhost:${port}`);
+  console.log(`Server is running on http://localhost:${port}`);
 });
