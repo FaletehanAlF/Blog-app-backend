@@ -10,6 +10,7 @@ import { categorySchema } from "./schemas/category.schema.js";
 import authRoutes from "./routes/auth.js";
 import authMiddleware from "./middleware/authMiddleware.js";
 import "dotenv/config";
+import roleMiddleware from "./middleware/roleMiddleware.js";
 
 const app = express();
 
@@ -213,7 +214,7 @@ app.delete("/categories/:id", async (req, res) => {
     }
 });
 
-app.get("/posts", authMiddleware, async (_req, res) => {
+app.get("/posts", authMiddleware, roleMiddleware("admin", "user"), async (_req, res) => {
     try {
         const [rows] = await db.query(`
             SELECT
@@ -291,6 +292,7 @@ app.get("/posts/:id", async (req, res) => {
 
 app.post(
     "/posts",
+    authMiddleware,
     (req, res, next) => {
         const contentType = req.headers["content-type"] || "";
 
@@ -338,6 +340,8 @@ app.post(
 
     async (req, res) => {
         try {
+            const user = (req as any).user;
+            const userId = user.id;
             const parsedBody = {
                 title: req.body?.title,
                 content: req.body?.content,
