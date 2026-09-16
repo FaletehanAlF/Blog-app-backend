@@ -168,7 +168,7 @@ app.put("/categories/:id", async (req, res) => {
   }
 });
 
-app.delete("/categories/:id", async (req, res) => {
+app.delete("/categories/:id", authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
 
