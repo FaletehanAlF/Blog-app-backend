@@ -8,6 +8,7 @@ import fs from "fs";
 import { fileURLToPath } from "url";
 import { categorySchema } from "./schemas/category.schema.js";
 import authRoutes from "./routes/auth.js";
+import "dotenv/config";
 
 const app = express();
 
