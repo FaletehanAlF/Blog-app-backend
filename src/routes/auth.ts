@@ -2,6 +2,7 @@ import { Router } from "express";
 import bcrypt from "bcrypt";
 import { z } from "zod";
 import db from "../config/database.js";
+import jwt from "jsonwebtoken";
 
 const router = Router();
 
@@ -56,6 +57,86 @@ router.post("/register", async (req, res) => {
       message: "Terjadi kesalahan pada server",
     });
   }
+});
+
+router.post("/login", async (req, res) => {
+    try {
+        const validation = z
+            .object({
+                email: z.string().email("Email tidak valid"),
+                password: z.string().min(1, "Password wajib diisi"),
+            })
+            .safeParse(req.body);
+
+        if (!validation.success) {
+            return res.status(400).json({
+                success: false,
+                message: "Data tidak valid",
+                errors: validation.error.issues,
+            });
+        }
+
+        const { email, password } = validation.data;
+
+        const [rows] = await db.query(
+            "SELECT id, name, email, password FROM users WHERE email = ?",
+            [email]
+        );
+
+        const users = rows as any[];
+
+        if (users.length === 0) {
+            return res.status(401).json({
+                success: false,
+                message: "Email atau password salah",
+            });
+        }
+
+        const user = users[0];
+
+        const passwordMatch = await bcrypt.compare(
+            password,
+            user.password
+        );
+
+        if (!passwordMatch) {
+            return res.status(401).json({
+                success: false,
+                message: "Email atau password salah",
+            });
+        }
+
+        const token = jwt.sign(
+            {
+                id: user.id,
+                email: user.email,
+            },
+            process.env.JWT_SECRET as string,
+            {
+                expiresIn: "1d",
+            }
+        );
+
+        return res.status(200).json({
+            success: true,
+            message: "Login berhasil",
+            data: {
+                user: {
+                    id: user.id,
+                    name: user.name,
+                    email: user.email,
+                },
+                token,
+            },
+        });
+    } catch (error) {
+        console.error(error);
+
+        return res.status(500).json({
+            success: false,
+            message: "Terjadi kesalahan pada server",
+        });
+    }
 });
 
 export default router;
