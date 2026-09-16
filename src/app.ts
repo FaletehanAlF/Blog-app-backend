@@ -174,7 +174,6 @@ app.delete("/categories/:id", async (req, res) => {
     try {
         const { id } = req.params;
 
-        // Cek apakah kategori masih digunakan oleh artikel
         const [posts] = await db.query(
             "SELECT id FROM posts WHERE category_id = ?",
             [id]
@@ -210,7 +209,7 @@ app.delete("/categories/:id", async (req, res) => {
 
 app.get("/posts", async (_req, res) => {
     try {
-       const [rows] = await db.query(`
+    const [rows] = await db.query(`
     SELECT
         posts.id,
         posts.title,
