@@ -326,6 +326,21 @@ app.get("/posts", authMiddleware, async (req, res) => {
         ? Math.min(parsedLimit, 100)
         : 10;
 
+    // Sort via whitelist server-side: nilai req.query.sort hanya dipakai
+    // sebagai kunci lookup, fragmen ORDER BY selalu berasal dari konstanta
+    // di bawah. Nilai tidak valid/absen → fallback urutan existing.
+    const rawSort = req.query.sort;
+    const sortInput = Array.isArray(rawSort) ? rawSort[0] : rawSort;
+    const sortKey =
+      typeof sortInput === "string" ? sortInput.trim() : "";
+    const sortWhitelist: Record<string, string> = {
+      latest: "posts.id DESC",
+      oldest: "posts.id ASC",
+      title_asc: "posts.title ASC, posts.id DESC",
+      title_desc: "posts.title DESC, posts.id DESC",
+    };
+    const orderClause = sortWhitelist[sortKey] ?? "posts.id DESC";
+
     const baseSelect = `
             SELECT
                 posts.id,
@@ -371,7 +386,7 @@ app.get("/posts", authMiddleware, async (req, res) => {
 
     if (!paginated) {
       const [rows] = await db.query(
-        `${baseSelect}${whereClause} ORDER BY posts.id DESC`,
+        `${baseSelect}${whereClause} ORDER BY ${orderClause}`,
         whereParams,
       );
 
@@ -406,7 +421,7 @@ app.get("/posts", authMiddleware, async (req, res) => {
     const totalPages = total === 0 ? 0 : Math.ceil(total / limit);
 
     const [rows] = await db.query(
-      `${baseSelect}${whereClause} ORDER BY posts.id DESC LIMIT ? OFFSET ?`,
+      `${baseSelect}${whereClause} ORDER BY ${orderClause} LIMIT ? OFFSET ?`,
       [...whereParams, limit, offset],
     );
 
