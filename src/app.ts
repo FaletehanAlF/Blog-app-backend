@@ -303,6 +303,29 @@ app.get("/posts", authMiddleware, async (req, res) => {
     const searchInput = Array.isArray(rawSearch) ? rawSearch[0] : rawSearch;
     const search = typeof searchInput === "string" ? searchInput.trim() : "";
 
+    // Pagination hanya aktif jika client mengirim ?page= dan/atau ?limit=.
+    // Tanpa keduanya, perilaku existing (kembalikan semua data) dipertahankan.
+    const rawPage = req.query.page;
+    const rawLimit = req.query.limit;
+    const pageInput = Array.isArray(rawPage) ? rawPage[0] : rawPage;
+    const limitInput = Array.isArray(rawLimit) ? rawLimit[0] : rawLimit;
+    const paginated = pageInput !== undefined || limitInput !== undefined;
+
+    const parsedPage = Number.parseInt(
+      typeof pageInput === "string" ? pageInput : "",
+      10,
+    );
+    const parsedLimit = Number.parseInt(
+      typeof limitInput === "string" ? limitInput : "",
+      10,
+    );
+    const page =
+      Number.isInteger(parsedPage) && parsedPage > 0 ? parsedPage : 1;
+    const limit =
+      Number.isInteger(parsedLimit) && parsedLimit > 0
+        ? Math.min(parsedLimit, 100)
+        : 10;
+
     const baseSelect = `
             SELECT
                 posts.id,
@@ -321,11 +344,19 @@ app.get("/posts", authMiddleware, async (req, res) => {
                 ON posts.user_id = users.id
         `;
 
-    let rows;
+    const baseCount = `
+            SELECT COUNT(*) AS total
+            FROM posts
+            JOIN categories
+                ON posts.category_id = categories.id
+        `;
 
-    if (!search) {
-      [rows] = await db.query(`${baseSelect} ORDER BY posts.id DESC`);
-    } else {
+    // WHERE clause disharing antara query data dan query COUNT agar
+    // total selalu konsisten dengan filter search yang sama.
+    let whereClause = "";
+    const whereParams: any[] = [];
+
+    if (search) {
       // Escape karakter khusus LIKE (backslash, %, _) agar diperlakukan
       // sebagai literal. Query tetap parameterized via placeholder "?".
       const escapedSearch = search
@@ -334,11 +365,50 @@ app.get("/posts", authMiddleware, async (req, res) => {
         .replace(/_/g, "\\_");
       const pattern = `%${escapedSearch}%`;
 
-      [rows] = await db.query(
-        `${baseSelect} WHERE posts.title LIKE ? ESCAPE '\\\\' OR categories.name LIKE ? ESCAPE '\\\\' ORDER BY posts.id DESC`,
-        [pattern, pattern],
-      );
+      whereClause = ` WHERE posts.title LIKE ? ESCAPE '\\\\' OR categories.name LIKE ? ESCAPE '\\\\'`;
+      whereParams.push(pattern, pattern);
     }
+
+    if (!paginated) {
+      const [rows] = await db.query(
+        `${baseSelect}${whereClause} ORDER BY posts.id DESC`,
+        whereParams,
+      );
+
+      const data = (rows as any[]).map((row) => ({
+        ...row,
+        author:
+          row.user_id == null
+            ? null
+            : {
+                id: row.user_id,
+                name: row.author_name,
+                email: row.author_email,
+              },
+      }));
+
+      res.status(200).json({
+        success: true,
+        message: "Berhasil mengambil data artikel",
+        data,
+      });
+
+      return;
+    }
+
+    const offset = (page - 1) * limit;
+
+    const [countRows] = await db.query(
+      `${baseCount}${whereClause}`,
+      whereParams,
+    );
+    const total = Number((countRows as any[])[0]?.total ?? 0);
+    const totalPages = total === 0 ? 0 : Math.ceil(total / limit);
+
+    const [rows] = await db.query(
+      `${baseSelect}${whereClause} ORDER BY posts.id DESC LIMIT ? OFFSET ?`,
+      [...whereParams, limit, offset],
+    );
 
     const data = (rows as any[]).map((row) => ({
       ...row,
@@ -356,6 +426,12 @@ app.get("/posts", authMiddleware, async (req, res) => {
       success: true,
       message: "Berhasil mengambil data artikel",
       data,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+      },
     });
   } catch (error) {
     console.error(error);
