@@ -3,6 +3,7 @@ import bcrypt from "bcrypt";
 import { z } from "zod";
 import db from "../config/database.js";
 import jwt from "jsonwebtoken";
+import authMiddleware from "../middleware/authMiddleware.js";
 
 const router = Router();
 
@@ -52,12 +53,14 @@ router.post("/register", async (req, res) => {
   } catch (error) {
     console.error(error);
 
-    return res.status(500).json({
-      success: false,
-      message: "Terjadi kesalahan pada server",
-    });
-  }
+        return res.status(500).json({
+            success: false,
+            message: "Terjadi kesalahan pada server",
+        });
+    }
 });
+
+export default router;
 
 router.post("/login", async (req, res) => {
     try {
@@ -141,4 +144,43 @@ router.post("/login", async (req, res) => {
     }
 });
 
-export default router;
+router.get("/me", authMiddleware, async (req, res) => {
+    try {
+        const userId = Number((req as any).user.id);
+
+        const [rows] = await db.query(
+            "SELECT id, name, email, role FROM users WHERE id = ?",
+            [userId]
+        );
+
+        const users = rows as any[];
+
+        if (users.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: "User tidak ditemukan",
+            });
+        }
+
+        const [countRows] = await db.query(
+            "SELECT COUNT(*) AS article_count FROM posts WHERE user_id = ?",
+            [userId]
+        );
+
+        return res.status(200).json({
+            success: true,
+            message: "Berhasil mengambil profil",
+            data: {
+                ...users[0],
+                article_count: Number((countRows as any[])[0].article_count),
+            },
+        });
+    } catch (error) {
+        console.error(error);
+
+        return res.status(500).json({
+            success: false,
+            message: "Terjadi kesalahan pada server",
+        });
+    }
+});

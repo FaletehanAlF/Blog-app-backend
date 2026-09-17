@@ -10,7 +10,6 @@ import { categorySchema } from "./schemas/category.schema.js";
 import authRoutes from "./routes/auth.js";
 import authMiddleware from "./middleware/authMiddleware.js";
 import "dotenv/config";
-import roleMiddleware from "./middleware/roleMiddleware.js";
 
 const jwtSecret = process.env.JWT_SECRET;
 
@@ -84,9 +83,30 @@ const upload = multer({
 
 app.use("/uploads", express.static(uploadsDir));
 
-app.get("/categories", authMiddleware, async (_req, res) => {
+app.get("/categories", authMiddleware, async (req, res) => {
   try {
-    const [rows] = await db.query("SELECT * FROM categories");
+    const user = (req as any).user;
+    const userId = Number(user.id);
+
+    // Admin melihat seluruh kategori, user biasa hanya kategori miliknya sendiri.
+    const [rows] =
+      user.role === "admin"
+        ? await db.query(
+            `SELECT categories.id, categories.name, categories.user_id,
+                    users.name AS owner_name
+             FROM categories
+             LEFT JOIN users ON categories.user_id = users.id
+             ORDER BY categories.id DESC`,
+          )
+        : await db.query(
+            `SELECT categories.id, categories.name, categories.user_id,
+                    users.name AS owner_name
+             FROM categories
+             LEFT JOIN users ON categories.user_id = users.id
+             WHERE categories.user_id = ?
+             ORDER BY categories.id DESC`,
+            [userId],
+          );
 
     res.status(200).json({
       success: true,
@@ -103,7 +123,7 @@ app.get("/categories", authMiddleware, async (_req, res) => {
   }
 });
 
-app.post("/categories", authMiddleware, roleMiddleware("admin"), async (req, res) => {
+app.post("/categories", authMiddleware, async (req, res) => {
   try {
     const validation = categorySchema.safeParse(req.body);
 
@@ -119,9 +139,12 @@ app.post("/categories", authMiddleware, roleMiddleware("admin"), async (req, res
 
     const { name } = validation.data;
 
+    // Ownership kategori selalu diambil dari JWT, bukan dari request body.
+    const ownerId = Number((req as any).user.id);
+
     const [result] = await db.query(
-      "INSERT INTO categories (name) VALUES (?)",
-      [name],
+      "INSERT INTO categories (name, user_id) VALUES (?, ?)",
+      [name, ownerId],
     );
 
     res.status(201).json({
@@ -139,7 +162,7 @@ app.post("/categories", authMiddleware, roleMiddleware("admin"), async (req, res
   }
 });
 
-app.put("/categories/:id", authMiddleware, roleMiddleware("admin"), async (req, res) => {
+app.put("/categories/:id", authMiddleware, async (req, res) => {
   try {
     const validation = categorySchema.safeParse(req.body);
 
@@ -155,6 +178,36 @@ app.put("/categories/:id", authMiddleware, roleMiddleware("admin"), async (req, 
 
     const { name } = validation.data;
     const { id } = req.params;
+    const user = (req as any).user;
+    const userId = Number(user.id);
+
+    const [catRows] = await db.query(
+      "SELECT id, user_id FROM categories WHERE id = ?",
+      [id],
+    );
+
+    if ((catRows as any[]).length === 0) {
+      res.status(404).json({
+        success: false,
+        message: "Kategori tidak ditemukan",
+      });
+
+      return;
+    }
+
+    const categoryOwner = (catRows as any[])[0].user_id;
+
+    if (
+      user.role !== "admin" &&
+      (categoryOwner == null || Number(categoryOwner) !== userId)
+    ) {
+      res.status(403).json({
+        success: false,
+        message: "Anda tidak memiliki akses untuk mengedit kategori ini",
+      });
+
+      return;
+    }
 
     const [result] = await db.query(
       "UPDATE categories SET name = ? WHERE id = ?",
@@ -176,9 +229,39 @@ app.put("/categories/:id", authMiddleware, roleMiddleware("admin"), async (req, 
   }
 });
 
-app.delete("/categories/:id", authMiddleware, roleMiddleware("admin"), async (req, res) => {
+app.delete("/categories/:id", authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
+    const user = (req as any).user;
+    const userId = Number(user.id);
+
+    const [catRows] = await db.query(
+      "SELECT id, user_id FROM categories WHERE id = ?",
+      [id],
+    );
+
+    if ((catRows as any[]).length === 0) {
+      res.status(404).json({
+        success: false,
+        message: "Kategori tidak ditemukan",
+      });
+
+      return;
+    }
+
+    const categoryOwner = (catRows as any[])[0].user_id;
+
+    if (
+      user.role !== "admin" &&
+      (categoryOwner == null || Number(categoryOwner) !== userId)
+    ) {
+      res.status(403).json({
+        success: false,
+        message: "Anda tidak memiliki akses untuk menghapus kategori ini",
+      });
+
+      return;
+    }
 
     const [posts] = await db.query(
       "SELECT id FROM posts WHERE category_id = ?",
@@ -223,17 +306,34 @@ app.get("/posts", authMiddleware, async (_req, res) => {
                 posts.content,
                 posts.category_id,
                 posts.image,
-                categories.name AS category
+                posts.user_id,
+                categories.name AS category,
+                users.name AS author_name,
+                users.email AS author_email
             FROM posts
             JOIN categories
                 ON posts.category_id = categories.id
+            LEFT JOIN users
+                ON posts.user_id = users.id
             ORDER BY posts.id DESC
         `);
+
+    const data = (rows as any[]).map((row) => ({
+      ...row,
+      author:
+        row.user_id == null
+          ? null
+          : {
+              id: row.user_id,
+              name: row.author_name,
+              email: row.author_email,
+            },
+    }));
 
     res.status(200).json({
       success: true,
       message: "Berhasil mengambil data artikel",
-      data: rows,
+      data,
     });
   } catch (error) {
     console.error(error);
@@ -257,10 +357,15 @@ app.get("/posts/:id", authMiddleware, async (req, res) => {
                 posts.content,
                 posts.category_id,
                 posts.image,
-                categories.name AS category
+                posts.user_id,
+                categories.name AS category,
+                users.name AS author_name,
+                users.email AS author_email
             FROM posts
             JOIN categories
                 ON posts.category_id = categories.id
+            LEFT JOIN users
+                ON posts.user_id = users.id
             WHERE posts.id = ?
             `,
       [id],
@@ -275,10 +380,22 @@ app.get("/posts/:id", authMiddleware, async (req, res) => {
       return;
     }
 
+    const detail = (rows as any[])[0];
+
     res.status(200).json({
       success: true,
       message: "Berhasil mengambil detail artikel",
-      data: (rows as any[])[0],
+      data: {
+        ...detail,
+        author:
+          detail.user_id == null
+            ? null
+            : {
+                id: detail.user_id,
+                name: detail.author_name,
+                email: detail.author_email,
+              },
+      },
     });
   } catch (error) {
     console.error("GET /posts ERROR:", error);
@@ -367,7 +484,7 @@ app.post(
       const { title, content, category_id } = validation.data;
 
       const [category] = await db.query(
-        "SELECT id FROM categories WHERE id = ?",
+        "SELECT id, user_id FROM categories WHERE id = ?",
         [category_id],
       );
 
@@ -379,6 +496,25 @@ app.post(
         res.status(400).json({
           success: false,
           message: "Kategori tidak ditemukan",
+        });
+
+        return;
+      }
+
+      // User hanya boleh memakai kategori miliknya sendiri. Admin bebas.
+      const categoryOwner = (category as any[])[0].user_id;
+
+      if (
+        user.role !== "admin" &&
+        (categoryOwner == null || Number(categoryOwner) !== Number(userId))
+      ) {
+        if (req.file) {
+          fs.unlink(req.file.path, () => {});
+        }
+
+        res.status(403).json({
+          success: false,
+          message: "Anda tidak dapat menggunakan kategori milik user lain",
         });
 
         return;
@@ -510,7 +646,7 @@ app.put(
       const { title, content, category_id } = validation.data;
 
       const [categoryRows] = await db.query(
-        "SELECT id FROM categories WHERE id = ?",
+        "SELECT id, user_id FROM categories WHERE id = ?",
         [category_id],
       );
 
@@ -524,6 +660,25 @@ app.put(
         res.status(400).json({
           success: false,
           message: "Kategori tidak ditemukan",
+        });
+
+        return;
+      }
+
+      // Jika user mengganti kategori, kategori baru harus miliknya sendiri. Admin bebas.
+      const newCategoryOwner = categories[0].user_id;
+
+      if (
+        user.role !== "admin" &&
+        (newCategoryOwner == null || Number(newCategoryOwner) !== userId)
+      ) {
+        if (req.file) {
+          fs.unlink(req.file.path, () => {});
+        }
+
+        res.status(403).json({
+          success: false,
+          message: "Anda tidak dapat menggunakan kategori milik user lain",
         });
 
         return;
@@ -573,19 +728,36 @@ app.put(
                     posts.content,
                     posts.category_id,
                     posts.image,
-                    categories.name AS category
+                    posts.user_id,
+                    categories.name AS category,
+                    users.name AS author_name,
+                    users.email AS author_email
                 FROM posts
                 JOIN categories
                     ON posts.category_id = categories.id
+                LEFT JOIN users
+                    ON posts.user_id = users.id
                 WHERE posts.id = ?
                 `,
         [id],
       );
 
+      const updated = (updatedRows as any[])[0];
+
       res.status(200).json({
         success: true,
         message: "Artikel berhasil diperbarui",
-        data: (updatedRows as any[])[0],
+        data: {
+          ...updated,
+          author:
+            updated.user_id == null
+              ? null
+              : {
+                  id: updated.user_id,
+                  name: updated.author_name,
+                  email: updated.author_email,
+                },
+        },
       });
     } catch (error) {
       console.error("PUT /posts ERROR:", error);
