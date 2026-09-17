@@ -297,9 +297,13 @@ app.delete("/categories/:id", authMiddleware, async (req, res) => {
   }
 });
 
-app.get("/posts", authMiddleware, async (_req, res) => {
+app.get("/posts", authMiddleware, async (req, res) => {
   try {
-    const [rows] = await db.query(`
+    const rawSearch = req.query.search;
+    const searchInput = Array.isArray(rawSearch) ? rawSearch[0] : rawSearch;
+    const search = typeof searchInput === "string" ? searchInput.trim() : "";
+
+    const baseSelect = `
             SELECT
                 posts.id,
                 posts.title,
@@ -315,8 +319,26 @@ app.get("/posts", authMiddleware, async (_req, res) => {
                 ON posts.category_id = categories.id
             LEFT JOIN users
                 ON posts.user_id = users.id
-            ORDER BY posts.id DESC
-        `);
+        `;
+
+    let rows;
+
+    if (!search) {
+      [rows] = await db.query(`${baseSelect} ORDER BY posts.id DESC`);
+    } else {
+      // Escape karakter khusus LIKE (backslash, %, _) agar diperlakukan
+      // sebagai literal. Query tetap parameterized via placeholder "?".
+      const escapedSearch = search
+        .replace(/\\/g, "\\\\")
+        .replace(/%/g, "\\%")
+        .replace(/_/g, "\\_");
+      const pattern = `%${escapedSearch}%`;
+
+      [rows] = await db.query(
+        `${baseSelect} WHERE posts.title LIKE ? ESCAPE '\\\\' OR categories.name LIKE ? ESCAPE '\\\\' ORDER BY posts.id DESC`,
+        [pattern, pattern],
+      );
+    }
 
     const data = (rows as any[]).map((row) => ({
       ...row,
