@@ -355,12 +355,21 @@ app.get("/posts", authMiddleware, async (req, res) => {
                 posts.user_id,
                 categories.name AS category,
                 users.name AS author_name,
-                users.email AS author_email
+                users.email AS author_email,
+                COALESCE(like_counts.like_count, 0) AS like_count
             FROM posts
             JOIN categories
                 ON posts.category_id = categories.id
             LEFT JOIN users
                 ON posts.user_id = users.id
+            LEFT JOIN (
+                SELECT
+                    post_id,
+                    COUNT(*) AS like_count
+                FROM likes
+                GROUP BY post_id
+            ) AS like_counts
+                ON like_counts.post_id = posts.id
         `;
 
     const baseCount = `
@@ -396,6 +405,7 @@ app.get("/posts", authMiddleware, async (req, res) => {
 
       const data = (rows as any[]).map((row) => ({
         ...row,
+        like_count: Number(row.like_count ?? 0),
         author:
           row.user_id == null
             ? null
@@ -431,6 +441,7 @@ app.get("/posts", authMiddleware, async (req, res) => {
 
     const data = (rows as any[]).map((row) => ({
       ...row,
+      like_count: Number(row.like_count ?? 0),
       author:
         row.user_id == null
           ? null
@@ -477,12 +488,21 @@ app.get("/posts/:id", authMiddleware, async (req, res) => {
                 posts.user_id,
                 categories.name AS category,
                 users.name AS author_name,
-                users.email AS author_email
+                users.email AS author_email,
+                COALESCE(like_counts.like_count, 0) AS like_count
             FROM posts
             JOIN categories
                 ON posts.category_id = categories.id
             LEFT JOIN users
                 ON posts.user_id = users.id
+            LEFT JOIN (
+                SELECT
+                    post_id,
+                    COUNT(*) AS like_count
+                FROM likes
+                GROUP BY post_id
+            ) AS like_counts
+                ON like_counts.post_id = posts.id
             WHERE posts.id = ?
             `,
       [id],
@@ -504,6 +524,7 @@ app.get("/posts/:id", authMiddleware, async (req, res) => {
       message: "Berhasil mengambil detail artikel",
       data: {
         ...detail,
+        like_count: Number(detail.like_count ?? 0),
         author:
           detail.user_id == null
             ? null
