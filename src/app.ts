@@ -10,6 +10,7 @@ import { categorySchema } from "./schemas/category.schema.js";
 import authRoutes from "./routes/auth.js";
 import bookmarksRouter from "./routes/bookmarks.js";
 import likesRouter from "./routes/likes.js";
+import notificationsRouter from "./routes/notifications.js";
 import authMiddleware from "./middleware/authMiddleware.js";
 import "dotenv/config";
 
@@ -38,6 +39,7 @@ app.use((req, res, next) => {
 app.use("/auth", authRoutes);
 app.use("/bookmarks", bookmarksRouter);
 app.use("/likes", likesRouter);
+app.use("/notifications", notificationsRouter);
 
 const port = 8000;
 
