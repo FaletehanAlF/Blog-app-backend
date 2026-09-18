@@ -79,3 +79,32 @@ router.get("/unread-count", authMiddleware, async (req, res) => {
 });
 
 export default router;
+
+// PATCH /notifications/read-all — tandai semua notification belum dibaca sebagai sudah dibaca.
+router.patch("/read-all", authMiddleware, async (req, res) => {
+  try {
+    const userId = Number((req as any).user.id);
+
+    const [result] = await db.query(
+      "UPDATE notifications SET is_read = TRUE WHERE user_id = ? AND is_read = FALSE",
+      [userId],
+    );
+
+    const updated = (result as any).affectedRows ?? 0;
+
+    return res.status(200).json({
+      success: true,
+      message: "Semua notifikasi telah ditandai sebagai sudah dibaca",
+      data: {
+        updated,
+      },
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Gagal menandai notifikasi sebagai sudah dibaca",
+    });
+  }
+});
