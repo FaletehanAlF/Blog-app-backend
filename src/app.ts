@@ -11,7 +11,10 @@ import authRoutes from "./routes/auth.js";
 import bookmarksRouter from "./routes/bookmarks.js";
 import likesRouter from "./routes/likes.js";
 import notificationsRouter from "./routes/notifications.js";
+import profileRouter from "./routes/profile.js";
 import authMiddleware from "./middleware/authMiddleware.js";
+import { initSocket } from "./config/socket.js";
+import http from "http";
 import "dotenv/config";
 
 const jwtSecret = process.env.JWT_SECRET;
@@ -40,6 +43,7 @@ app.use("/auth", authRoutes);
 app.use("/bookmarks", bookmarksRouter);
 app.use("/likes", likesRouter);
 app.use("/notifications", notificationsRouter);
+app.use("/profile", profileRouter);
 
 const port = 8000;
 
@@ -358,6 +362,7 @@ app.get("/posts", authMiddleware, async (req, res) => {
                 categories.name AS category,
                 users.name AS author_name,
                 users.email AS author_email,
+                users.profile_image AS author_profile_image,
                 COALESCE(like_counts.like_count, 0) AS like_count
             FROM posts
             JOIN categories
@@ -415,6 +420,7 @@ app.get("/posts", authMiddleware, async (req, res) => {
                 id: row.user_id,
                 name: row.author_name,
                 email: row.author_email,
+                profile_image: row.author_profile_image,
               },
       }));
 
@@ -451,6 +457,7 @@ app.get("/posts", authMiddleware, async (req, res) => {
               id: row.user_id,
               name: row.author_name,
               email: row.author_email,
+              profile_image: row.author_profile_image,
             },
     }));
 
@@ -491,6 +498,7 @@ app.get("/posts/:id", authMiddleware, async (req, res) => {
                 categories.name AS category,
                 users.name AS author_name,
                 users.email AS author_email,
+                users.profile_image AS author_profile_image,
                 COALESCE(like_counts.like_count, 0) AS like_count
             FROM posts
             JOIN categories
@@ -534,6 +542,7 @@ app.get("/posts/:id", authMiddleware, async (req, res) => {
                 id: detail.user_id,
                 name: detail.author_name,
                 email: detail.author_email,
+                profile_image: detail.author_profile_image,
               },
       },
     });
@@ -1025,6 +1034,10 @@ app.use(
   },
 );
 
-app.listen(port, () => {
+const server = http.createServer(app);
+
+initSocket(server);
+
+server.listen(port, () => {
   console.log(`Server is running on http://localhost:${port}`);
 });

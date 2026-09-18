@@ -1,6 +1,7 @@
 import { Router } from "express";
 import db from "../config/database.js";
 import authMiddleware from "../middleware/authMiddleware.js";
+import { emitNotificationToUser } from "../config/socket.js";
 
 const router = Router();
 
@@ -90,10 +91,23 @@ router.post("/:postId", authMiddleware, async (req, res) => {
       const likerName = (likerRows as any[])[0]?.name;
 
       if (likerName) {
-        await db.query(
+        const [notifResult] = await db.query(
           "INSERT INTO notifications (user_id, actor_user_id, type, post_id, message, is_read) VALUES (?, ?, ?, ?, ?, false)",
           [postOwnerId, userId, "like", postId, `${likerName} menyukai artikel Anda`],
         );
+
+        const notification = {
+          id: (notifResult as any).insertId,
+          type: "like",
+          message: `${likerName} menyukai artikel Anda`,
+          post_id: postId,
+          actor_user_id: userId,
+          actor_name: likerName,
+          is_read: false,
+          created_at: new Date(),
+        };
+
+        emitNotificationToUser(postOwnerId, notification);
       }
     }
 

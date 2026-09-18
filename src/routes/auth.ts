@@ -149,7 +149,7 @@ router.get("/me", authMiddleware, async (req, res) => {
         const userId = Number((req as any).user.id);
 
         const [rows] = await db.query(
-            "SELECT id, name, email, role FROM users WHERE id = ?",
+            "SELECT id, name, email, profile_image, role FROM users WHERE id = ?",
             [userId]
         );
 
