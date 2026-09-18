@@ -12,6 +12,7 @@ import bookmarksRouter from "./routes/bookmarks.js";
 import likesRouter from "./routes/likes.js";
 import notificationsRouter from "./routes/notifications.js";
 import profileRouter from "./routes/profile.js";
+import statisticsRouter from "./routes/statistics.js";
 import authMiddleware from "./middleware/authMiddleware.js";
 import { initSocket } from "./config/socket.js";
 import http from "http";
@@ -44,6 +45,7 @@ app.use("/bookmarks", bookmarksRouter);
 app.use("/likes", likesRouter);
 app.use("/notifications", notificationsRouter);
 app.use("/profile", profileRouter);
+app.use("/statistics", statisticsRouter);
 
 const port = 8000;
 
@@ -358,6 +360,7 @@ app.get("/posts", authMiddleware, async (req, res) => {
                 posts.content,
                 posts.category_id,
                 posts.image,
+                posts.view_count,
                 posts.user_id,
                 categories.name AS category,
                 users.name AS author_name,
@@ -413,6 +416,7 @@ app.get("/posts", authMiddleware, async (req, res) => {
       const data = (rows as any[]).map((row) => ({
         ...row,
         like_count: Number(row.like_count ?? 0),
+        view_count: Number(row.view_count ?? 0),
         author:
           row.user_id == null
             ? null
@@ -450,6 +454,7 @@ app.get("/posts", authMiddleware, async (req, res) => {
     const data = (rows as any[]).map((row) => ({
       ...row,
       like_count: Number(row.like_count ?? 0),
+      view_count: Number(row.view_count ?? 0),
       author:
         row.user_id == null
           ? null
@@ -494,6 +499,7 @@ app.get("/posts/:id", authMiddleware, async (req, res) => {
                 posts.content,
                 posts.category_id,
                 posts.image,
+                posts.view_count,
                 posts.user_id,
                 categories.name AS category,
                 users.name AS author_name,
@@ -535,6 +541,7 @@ app.get("/posts/:id", authMiddleware, async (req, res) => {
       data: {
         ...detail,
         like_count: Number(detail.like_count ?? 0),
+        view_count: Number(detail.view_count ?? 0),
         author:
           detail.user_id == null
             ? null
@@ -552,6 +559,57 @@ app.get("/posts/:id", authMiddleware, async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Gagal mengambil detail artikel",
+    });
+  }
+});
+
+app.post("/posts/:id/view", authMiddleware, async (req, res) => {
+  try {
+    const rawId = (req.params as any).id;
+    const idStr = Array.isArray(rawId) ? String(rawId[0]) : String(rawId);
+    const parsed = Number.parseInt(idStr, 10);
+
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "ID artikel tidak valid",
+      });
+    }
+
+    const postId = parsed;
+
+    // Atomic increment: aman dari race condition, tidak ada SELECT -> +1 -> UPDATE.
+    const [updateResult] = await db.query(
+      "UPDATE posts SET view_count = view_count + 1 WHERE id = ?",
+      [postId],
+    );
+
+    if ((updateResult as any).affectedRows === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Artikel tidak ditemukan",
+      });
+    }
+
+    const [rows] = await db.query("SELECT view_count FROM posts WHERE id = ?", [
+      postId,
+    ]);
+    const viewCount = Number((rows as any[])[0]?.view_count ?? 0);
+
+    return res.status(200).json({
+      success: true,
+      message: "View berhasil ditambahkan",
+      data: {
+        post_id: postId,
+        view_count: viewCount,
+      },
+    });
+  } catch (error) {
+    console.error("POST /posts/:id/view ERROR:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Gagal menambahkan view",
     });
   }
 });
