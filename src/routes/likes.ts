@@ -75,6 +75,28 @@ router.post("/:postId", authMiddleware, async (req, res) => {
       [userId, postId],
     );
 
+    // Buat notification untuk pemilik artikel jika liker bukan pemilik
+    const [postDetail] = await db.query(
+      "SELECT user_id FROM posts WHERE id = ?",
+      [postId],
+    );
+    const postOwnerId = (postDetail as any[])[0]?.user_id;
+
+    if (postOwnerId !== undefined && Number(postOwnerId) !== userId) {
+      const [likerRows] = await db.query(
+        "SELECT name FROM users WHERE id = ?",
+        [userId],
+      );
+      const likerName = (likerRows as any[])[0]?.name;
+
+      if (likerName) {
+        await db.query(
+          "INSERT INTO notifications (user_id, actor_user_id, type, post_id, message, is_read) VALUES (?, ?, ?, ?, ?, false)",
+          [postOwnerId, userId, "like", postId, `${likerName} menyukai artikel Anda`],
+        );
+      }
+    }
+
     return res.status(201).json({
       success: true,
       message: "Artikel berhasil di-like",
